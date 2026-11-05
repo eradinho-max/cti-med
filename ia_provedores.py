@@ -301,7 +301,7 @@ def _retry_after(ex, default=45):
 
 class Provedor:
     def __init__(self, nome, url, key, modelo, *, tipo="openai", temperature=0.2, top_p=None,
-                 reasoning_effort=None, timeout=55):
+                 reasoning_effort=None, timeout=55, extra_body=None):
         self.nome = nome
         self.url = url.rstrip("/")
         self.key = key
@@ -311,6 +311,7 @@ class Provedor:
         self.top_p = top_p
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
+        self.extra_body = dict(extra_body or {})
         self.json_mode = True
         self.pausado_ate = 0.0
         self.ultimo_erro = ""
@@ -324,11 +325,14 @@ class Provedor:
             "temperature": self.temperature,
             "max_tokens": max_tokens,
             "messages": msgs,
+            "stream": False,
         }
         if self.top_p is not None:
             body["top_p"] = self.top_p
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
+        if self.extra_body:
+            body.update(self.extra_body)
         if self.json_mode:
             body["response_format"] = {"type": "json_object"}
         req = urllib.request.Request(
@@ -387,7 +391,8 @@ if _nkey:
         _env("CTI_NVIDIA_BASE_URL", padrao="https://integrate.api.nvidia.com/v1"),
         _nkey,
         _env("CTI_NVIDIA_MODEL", padrao="nvidia/nemotron-3.5-lightning-30b-a3b"),
-        tipo="nvidia", temperature=1.0, top_p=0.95, timeout=60
+        tipo="nvidia", temperature=1.0, top_p=0.95, timeout=40,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}}
     ))
 
 _lkey = _env("CTI_LLM_API_KEY", "MEDQUEST_LLM_API_KEY", "OPENAI_API_KEY")
