@@ -36,6 +36,29 @@ jobs:
           node --check static/mb32.js
           node --check static/mb33.js
           node --check static/kotu.js
+          node --check static/sw.js
+      - name: PWA integrity
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("static/manifest.json").read_text())
+          assert manifest["start_url"]=="/"
+          assert manifest["scope"]=="/"
+          assert manifest["display"]=="standalone"
+          assert manifest.get("orientation")=="any"
+          assert manifest.get("id")=="/"
+          icons=manifest.get("icons",[])
+          sizes={i.get("sizes") for i in icons}
+          assert "192x192" in sizes and "512x512" in sizes
+          html=Path("static/index.html").read_text()
+          assert 'rel="manifest"' in html
+          assert 'viewport-fit=cover' in html
+          assert 'apple-mobile-web-app-capable' in html
+          sw=Path("static/sw.js").read_text()
+          assert "serviceWorker" not in sw or "fetch" in sw
+          assert "/static/offline.html" in sw
+          PY
       - name: API smoke tests
         run: |
           python - <<'PY'
