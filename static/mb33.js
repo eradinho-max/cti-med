@@ -63,6 +63,7 @@
           <button class="btn sec sm" id="mb33Regenerate">Regenerar</button>
         </div>
         <div id="mb33Status" class="mb33-status small muted"></div>
+        <div id="mb33Notice" class="mb33-notice" hidden role="status" aria-live="polite"></div>
         <main id="mb33Body" class="mb33-body"></main>
       </section>`;
     document.body.appendChild(m);
@@ -152,7 +153,15 @@
     const src=state.source, m=state.material, body=document.getElementById('mb33Body'), status=document.getElementById('mb33Status');
     if(src){document.getElementById('mb33Title').textContent=src.title||'Material de Estudo';document.getElementById('mb33Meta').textContent=[src.area,src.theme].filter(Boolean).join(' · ')}
     document.querySelectorAll('#mb33Modal [data-tab]').forEach(b=>b.classList.toggle('on',b.dataset.tab===state.tab));
-    document.getElementById('mb33SaveFlash').hidden=state.tab!=='flash';
+    const saveBtn=document.getElementById('mb33SaveFlash');
+    saveBtn.hidden=state.tab!=='flash';
+    if(state.tab==='flash' && m && !m.__error){
+      const cards=Array.isArray(m.flashcards)?m.flashcards.filter(x=>x?.frente&&x?.verso):[];
+      const f=get(FLASH_KEY,{});
+      const allSaved=cards.length&&cards.every((x,i)=>f['ai:'+state.source.key+':'+i]);
+      saveBtn.disabled=!!allSaved;
+      saveBtn.textContent=allSaved?'✓ Flashcards salvos':'Salvar flashcards no Caderno';
+    }
     if(state.busy){status.textContent='Gerando o material pela primeira vez. Depois ele ficará salvo neste navegador.';body.innerHTML='<div class="mb33-loading"><span></span><b>Preparando material de estudo…</b></div>';return}
     status.textContent=src&&cache()[src.key]?.material?'Material salvo neste navegador. Reabrir não consome nova chamada de IA.':'';
     if(!m){body.innerHTML='<div class="empty">Sem material.</div>';return}
@@ -160,10 +169,16 @@
     body.innerHTML=state.tab==='flash'?flash(m):sheet(m);
   }
 
+  function notice(msg,kind='ok'){
+    const n=document.getElementById('mb33Notice');if(!n)return;
+    n.className='mb33-notice '+kind;n.textContent=msg;n.hidden=false;
+    clearTimeout(notice._t);notice._t=setTimeout(()=>{n.hidden=true},5000);
+  }
+
   function saveFlashcards(){
     const m=state.material,src=state.source;if(!m||m.__error||!src)return;
     const cards=Array.isArray(m.flashcards)?m.flashcards.filter(x=>x?.frente&&x?.verso):[];
-    if(!cards.length)return;
+    if(!cards.length){notice('Nenhum flashcard disponível neste material.','warn');return}
     const f=get(FLASH_KEY,{});
     let added=0;
     cards.forEach((x,i)=>{
@@ -172,7 +187,15 @@
       f[id]={id,qid:src.type==='question'?Number(src.context.questionId):null,stationId:src.type==='station'?src.context.stationId:null,source:'ai-material',area:src.area||m.area||'',tema:src.theme||m.tema||'',frente:String(x.frente).slice(0,400),verso:String(x.verso).slice(0,900),proxima:today(),intervalo:1,reps:0,created:Date.now()};
       added++;
     });
-    set(FLASH_KEY,f);
+    const saved=set(FLASH_KEY,f);
+    if(!saved){notice('Não foi possível salvar os flashcards neste navegador.','bad');return}
+    window.dispatchEvent(new CustomEvent('cti:flashcards-updated',{detail:{added,total:cards.length,source:src.key}}));
+    if(added){
+      notice(added+' flashcards salvos no Caderno. Eles já estão disponíveis em Trilhas de Estudo → Caderno.','ok');
+      const btn=document.getElementById('mb33SaveFlash');if(btn){btn.textContent='✓ Flashcards salvos';btn.disabled=true}
+    }else{
+      notice('Esses flashcards já estavam salvos no Caderno.','ok');
+    }
     if(typeof toast==='function')toast(added?added+' flashcards adicionados ao Caderno.':'Esses flashcards já estão no Caderno.');
   }
 
