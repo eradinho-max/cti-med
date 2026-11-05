@@ -49,7 +49,7 @@ def build_kotu_router(by_id: dict, est_by_id: dict, exames_ocultos: set, conteud
         txt = (
             f"Tela: questão {q.get('exame')} · {q.get('edicao')} · Q{q.get('numero')} · "
             f"área: {q.get('especialidade')} · tema: {q.get('tema')}\n"
-            f"{ia_provedores.contexto(q)}Enunciado: {str(q.get('enunciado') or '')[:4000]}\nAlternativas:\n{alts}\n"
+            f"Enunciado: {str(q.get('enunciado') or '')[:4000]}\nAlternativas:\n{alts}\n"
         )
         if q.get("tem_imagem"):
             txt += "A questão original possui imagem/figura não incluída neste contexto textual.\n"
