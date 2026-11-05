@@ -760,7 +760,7 @@ function iaHtml(x, r){
   if (!x || x.fonte !== 'ia') return '';
   const alerta = x.alerta_revisao ? x.alerta_revisao.replace(/^POSSÍVEL INCONSISTÊNCIA DE GABARITO:\s*/i, '') : '';
   return `<div class="ia">
-    <div class="row" style="justify-content:space-between"><b class="row" style="gap:6px">${ic('ai')}IA Tutora · revisão da questão</b><span class="tiny muted">${esc(x.modelo || 'IA')}</span></div>
+    <div class="row" style="justify-content:space-between"><b class="row" style="gap:6px">${ic('ai')}IA Tutora · revisão da questão</b></div>
     ${x.alerta_revisao ? `<div class="imgwarn">${ic('flag')} <b>${/^POSSÍVEL INCONSISTÊNCIA/i.test(x.alerta_revisao) ? 'Possível inconsistência de gabarito' : 'Atenção'}:</b> ${esc(alerta)} O gabarito exibido é o oficial da banca.</div>` : ''}
     <h4>${ic('check')}${esc(x.resumo)}</h4>
     ${x.achado_chave || x.conceito_cobrado ? `<div class="row small" style="gap:6px;flex-wrap:wrap;margin:6px 0">${x.achado_chave ? `<span class="pill pri" style="white-space:normal">${ic('search')}Achado-chave: ${esc(x.achado_chave)}</span>` : ''}${x.conceito_cobrado ? `<span class="pill" style="white-space:normal">${ic('target')}Conceito cobrado: ${esc(x.conceito_cobrado)}</span>` : ''}</div>` : ''}
