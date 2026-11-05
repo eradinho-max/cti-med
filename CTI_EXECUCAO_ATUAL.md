@@ -6,6 +6,7 @@
 ## Status geral
 
 ### Concluído
+- [x] Texto técnico do Radar removido da interface do usuário
 - [x] Recuperação da produção e estrutura canônica
 - [x] GitHub + Vercel alinhados
 - [x] Autenticação single-user sem Supabase
@@ -21,16 +22,18 @@
 
 ### Em andamento
 - [ ] MB33 — Material de Estudo Inteligente
-  - [ ] CTA após questão corrigida
-  - [ ] CTA após estação autoavaliada
-  - [ ] Modal/página própria: Folha de Estudo + Flashcards
-  - [ ] Uma única geração IA por material
-  - [ ] Cache local do material
-  - [ ] Integrar flashcards gerados ao mesmo motor MB32
-  - [ ] Salvar no Caderno/Trilhas
-  - [ ] PDF/print A4
-  - [ ] Regenerar conscientemente, sem duplicar chamada
-  - [ ] Não exibir nada durante Modo Prova
+  - [x] CTA após questão corrigida
+  - [x] CTA após estação autoavaliada
+  - [x] Modal próprio: Folha de Estudo + Flashcards
+  - [x] Uma única geração IA por material
+  - [x] Cache local do material
+  - [x] Integrar flashcards gerados ao mesmo motor MB32
+  - [x] Salvar flashcards no Caderno/revisão
+  - [x] PDF/print A4
+  - [x] Regenerar conscientemente, sem duplicar chamada
+  - [x] Não exibir durante Modo Prova
+  - [x] Preview Vercel + CI + rota /api/kotu/estudo sem 500
+  - [ ] Validar geração real com NVIDIA em produção
 
 ### Próximos macroblocos
 - [ ] MB34 — Atlas Visual vinculado a temas/estações
