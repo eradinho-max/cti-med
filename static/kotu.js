@@ -115,6 +115,7 @@
   }
   async function study(){
     const c=ctx(); if(c.locked)return;
+    if(window.CTI_MB33?.openCurrent){ window.CTI_MB33.openCurrent(); return; }
     K.busy=true;render();
     try{
       const j=await call('/api/kotu/estudo',{context:c.payload});
