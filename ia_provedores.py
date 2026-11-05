@@ -1379,6 +1379,47 @@ def _cadeia(msgs, aceitar, contexto="ia", max_tokens=4096):
     return None, None, "; ".join(motivos)[:500]
 
 
+def gerar_dica_rapida(q: dict):
+    """Dica curta sem spoiler. Não gera o comentário completo nem envia gabarito ao modelo."""
+    alts = "\n".join(
+        f"{l}) {q.get('alt_' + l)}"
+        for l in LETRAS if q.get("alt_" + l)
+    )
+    msgs = [
+        {
+            "role": "system",
+            "content": (
+                "Você é um tutor médico para Revalida/ENAMED. Dê UMA dica curta que ajude o aluno "
+                "a raciocinar, sem revelar a alternativa correta, sem eliminar letras explicitamente "
+                "e sem informar o gabarito. Responda SOMENTE JSON válido: {\"dica\":\"...\"}."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Área: {q.get('especialidade','')}\nTema: {q.get('tema','')}\n"
+                f"Enunciado: {str(q.get('enunciado') or '')[:5000]}\nAlternativas:\n{alts[:5000]}"
+            ),
+        },
+    ]
+
+    def aceitar(resp):
+        if not isinstance(resp, dict):
+            return None
+        dica = str(resp.get("dica") or "").strip()
+        if len(dica) < 12:
+            return None
+        # Bloqueio básico de spoiler explícito por letra.
+        if re.search(r"(?i)\\b(?:alternativa|opção)\\s+[A-H]\\b", dica):
+            return None
+        return {"dica": dica[:900]}
+
+    item, modelo, motivo = _cadeia(msgs, aceitar, "dica", max_tokens=700)
+    if item:
+        return item["dica"], modelo, None
+    return None, None, motivo
+
+
 # -----------------------------------------------------------------------------
 # Kotu: assistente contextual e material de estudo
 SISTEMA_KOTU = """Você é o Kotu, assistente educacional de IA do CTi (Centro de Treinamento Intensivo), plataforma de estudo para
