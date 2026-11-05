@@ -406,6 +406,7 @@ class AccountPasswordChange(BaseModel):
 
 
 class SyncStatePut(BaseModel):
+    namespace: str = Field(default="progress", pattern=r"^(progress|study|training)$")
     base_version: Optional[int] = Field(default=None, ge=0)
     data: Dict[str, object]
 
@@ -577,14 +578,14 @@ def _sync_user(request: Request) -> UserIdentity:
 
 
 @app.get("/api/sync/state")
-def sync_state_get(request: Request):
+def sync_state_get(request: Request, namespace: str = Query("progress", pattern=r"^(progress|study|training)$")):
     u = _sync_user(request)
     try:
-        current = SYNC_STORE.get(u.user_id, "study")
+        current = SYNC_STORE.get(u.user_id, namespace)
     except SyncStoreError:
         raise HTTPException(503, "Não foi possível carregar a sincronização agora.")
     if not current:
-        return {"ok": True, "namespace": "study", "data": {}, "version": 0, "updated_at": None}
+        return {"ok": True, "namespace": namespace, "data": {}, "version": 0, "updated_at": None}
     return {"ok": True, **current}
 
 
@@ -592,7 +593,7 @@ def sync_state_get(request: Request):
 def sync_state_put(data: SyncStatePut, request: Request):
     u = _sync_user(request)
     try:
-        saved = SYNC_STORE.put(u.user_id, dict(data.data), data.base_version, "study")
+        saved = SYNC_STORE.put(u.user_id, dict(data.data), data.base_version, data.namespace)
     except SyncConflict as exc:
         return JSONResponse({"detail": "SYNC_CONFLICT", "current": exc.current}, status_code=409,
                             headers={"Cache-Control": "no-store"})
