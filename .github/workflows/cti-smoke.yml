@@ -34,6 +34,7 @@ jobs:
           node --check static/app.js
           node --check static/cti-app-v31.js
           node --check static/mb32.js
+          node --check static/mb33.js
           node --check static/kotu.js
       - name: API smoke tests
         run: |
