@@ -11,7 +11,7 @@ Variáveis principais:
   CTI_GEMINI_API_KEY / GEMINI_API_KEY
   CTI_GEMINI_MODELS  (CSV; padrão: gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.8-flash)
   CTI_NVIDIA_API_KEY / NVIDIA_API_KEY
-  CTI_NVIDIA_MODEL   (padrão: nvidia/nemotron-3-super-120b-a12b)
+  CTI_NVIDIA_MODEL   (padrão: nvidia/nemotron-3.5-lightning-30b-a3b)
   CTI_LLM_API_KEY + CTI_LLM_BASE_URL + CTI_LLM_MODEL
 """
 import json
@@ -386,7 +386,7 @@ if _nkey:
         "NVIDIA/Nemotron",
         _env("CTI_NVIDIA_BASE_URL", padrao="https://integrate.api.nvidia.com/v1"),
         _nkey,
-        _env("CTI_NVIDIA_MODEL", padrao="nvidia/nemotron-3-super-120b-a12b"),
+        _env("CTI_NVIDIA_MODEL", padrao="nvidia/nemotron-3.5-lightning-30b-a3b"),
         tipo="nvidia", temperature=1.0, top_p=0.95, timeout=60
     ))
 
@@ -1326,3 +1326,116 @@ def status() -> dict:
         "gerados_nesta_instalacao": len(CACHE),
         "cache_total_servidor": len(set(PRE) | set(CACHE)),
     }
+
+
+# -----------------------------------------------------------------------------
+# Kotu: assistente contextual e material de estudo
+SISTEMA_KOTU = """Você é o Kotu, assistente educacional de IA do CTi (Centro de Treinamento Intensivo), plataforma de estudo para
+Revalida (INEP), ENAMED, CONAREM e USMLE. Fale como um preceptor médico: didático, objetivo, tecnicamente rigoroso e sem infantilizar.
+Regras:
+- Responda no idioma da última mensagem do aluno (português do Brasil ou espanhol).
+- Seja conciso por padrão, expandindo quando solicitado.
+- Nunca invente dose, critério, diretriz, número ou referência.
+- Em questões, respeite a política da tela enviada pelo servidor. Antes da resposta, não revele nem sugira a alternativa correta.
+- Depois da resposta, diferencie gabarito oficial, interpretação e eventual ambiguidade.
+- Em paciente real, deixe claro que o uso é educacional e não substitui avaliação médica.
+- Responda SOMENTE JSON válido: {"resposta":"texto em Markdown simples"}."""
+
+def conversar(contexto: str, politica: str, historico: list, mensagem: str):
+    msgs = [
+        {"role":"system","content":SISTEMA_KOTU},
+        {"role":"system","content":f"POLÍTICA DA TELA:\n{politica}\n\nCONTEXTO DA TELA:\n{contexto}"}
+    ]
+    for h in (historico or [])[-8:]:
+        if isinstance(h, dict) and h.get("role") in ("user","assistant") and h.get("content"):
+            msgs.append({"role":h["role"],"content":str(h["content"])[:3000]})
+    msgs.append({"role":"user","content":str(mensagem)[:2500]})
+
+    def aceitar(resp):
+        if isinstance(resp, dict):
+            t=resp.get("resposta") or resp.get("reply") or resp.get("respuesta")
+            if isinstance(t,str) and t.strip():
+                return {"texto":t.strip()[:8000]}
+        return None
+
+    item, modelo, motivo = _cadeia(msgs, aceitar, "kotu", max_tokens=4096)
+    return (item["texto"], modelo, None) if item else (None, None, motivo)
+
+
+SISTEMA_MATERIAL_ESTUDO = """Você é o Kotu, preceptor médico do CTi. Transforme uma questão já corrigida ou uma estação já
+autoavaliada em um MATERIAL DE ESTUDO DO TEMA, não em mera repetição do enunciado.
+- Amplie para conhecimento transferível.
+- Priorize raciocínio, critérios, diferenciais, conduta, tratamento, pegadinhas e dicas de prova.
+- Não force seções clínicas em temas não clínicos.
+- Para 2ª fase, inclua roteiro de 10 minutos, verbalizações úteis e erros que retiram pontos.
+- Não invente doses, números, critérios ou referências.
+- Gere de 6 a 10 flashcards curtos.
+- Responda SOMENTE JSON válido."""
+
+PROMPT_MATERIAL_ESTUDO = """CONTEXTO:
+{contexto}
+
+ORIGEM: {origem}
+ÁREA: {area}
+TEMA: {tema}
+
+Retorne exatamente:
+{{
+ "material": {{
+  "titulo":"string","subtitulo":"string","area":"string","tema":"string","origem":"{origem}",
+  "o_que_foi_testado":"string",
+  "essenciais":["string"],"raciocinio":["string"],"quadro_clinico":["string"],"diagnostico":["string"],
+  "diferenciais":[{{"nome":"string","como_diferenciar":"string"}}],
+  "conduta":["string"],"farmacologia":[{{"item":"string","dose":"string","observacao":"string"}}],
+  "red_flags":["string"],"pegadinhas":["string"],"tips":["string"],"alem_da_questao":["string"],
+  "segunda_fase":{{"roteiro_10min":["string"],"frases_que_pontuam":["string"],"erros_comuns":["string"]}},
+  "flashcards":[{{"frente":"string","verso":"string"}}],"fechamento":"string"
+ }}
+}}"""
+
+def _material_limpo(resp, origem: str, area: str, tema: str):
+    if not isinstance(resp, dict):
+        return None
+    m=resp.get("material", resp)
+    if not isinstance(m, dict):
+        return None
+    def ls(v,n=12,tam=500):
+        return [str(x).strip()[:tam] for x in (v if isinstance(v,list) else [])[:n] if str(x).strip()]
+    def lo(v,campos,n=10,tam=400):
+        out=[]
+        for x in (v if isinstance(v,list) else [])[:n]:
+            if isinstance(x,dict):
+                y={k:str(x.get(k) or "").strip()[:tam] for k in campos}
+                if any(y.values()): out.append(y)
+        return out
+    if not str(m.get("titulo") or "").strip() or len(ls(m.get("essenciais"))) < 3 or len(lo(m.get("flashcards"),("frente","verso"))) < 3:
+        return None
+    sf=m.get("segunda_fase") if isinstance(m.get("segunda_fase"),dict) else {}
+    return {
+      "titulo":str(m.get("titulo") or "").strip()[:180],
+      "subtitulo":str(m.get("subtitulo") or "").strip()[:300],
+      "area":str(m.get("area") or area or "").strip()[:120],
+      "tema":str(m.get("tema") or tema or "").strip()[:180],
+      "origem":origem,
+      "o_que_foi_testado":str(m.get("o_que_foi_testado") or "").strip()[:1200],
+      "essenciais":ls(m.get("essenciais"),10),"raciocinio":ls(m.get("raciocinio"),10),
+      "quadro_clinico":ls(m.get("quadro_clinico"),10),"diagnostico":ls(m.get("diagnostico"),10),
+      "diferenciais":lo(m.get("diferenciais"),("nome","como_diferenciar"),6),
+      "conduta":ls(m.get("conduta"),12),"farmacologia":lo(m.get("farmacologia"),("item","dose","observacao"),8),
+      "red_flags":ls(m.get("red_flags"),8),"pegadinhas":ls(m.get("pegadinhas"),10),"tips":ls(m.get("tips"),10),
+      "alem_da_questao":ls(m.get("alem_da_questao"),10),
+      "segunda_fase":{
+        "roteiro_10min":ls(sf.get("roteiro_10min"),12),
+        "frases_que_pontuam":ls(sf.get("frases_que_pontuam"),10),
+        "erros_comuns":ls(sf.get("erros_comuns"),10)
+      } if origem=="estacao" else {},
+      "flashcards":lo(m.get("flashcards"),("frente","verso"),10,280),
+      "fechamento":str(m.get("fechamento") or "").strip()[:800]
+    }
+
+def gerar_material_estudo(contexto: str, origem: str, area: str="", tema: str=""):
+    prompt=PROMPT_MATERIAL_ESTUDO.format(contexto=str(contexto)[:14000],origem=origem,area=area or "",tema=tema or "")
+    msgs=[{"role":"system","content":SISTEMA_MATERIAL_ESTUDO},{"role":"user","content":prompt}]
+    def aceitar(resp): return _material_limpo(resp, origem, area, tema)
+    item, modelo, motivo=_cadeia(msgs, aceitar, f"material-estudo-{origem}", max_tokens=7000)
+    return (item, modelo, None) if item else (None, None, motivo)
