@@ -6,6 +6,7 @@ on:
       - main
       - 'recovery/**'
       - 'feature/**'
+      - 'fix/**'
   pull_request:
     branches:
       - main
