@@ -115,7 +115,7 @@
       ]
     },
     {
-      "source": "/static/cti-app-v28.js",
+      "source": "/static/cti-app-v31.js",
       "headers": [
         {
           "key": "Cache-Control",
@@ -128,7 +128,33 @@
       ]
     },
     {
-      "source": "/static/cti-app-v28.css",
+      "source": "/static/cti-app-v31.css",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, private"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/static/mb32.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, private"
+        },
+        {
+          "key": "CDN-Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/static/mb32.css",
       "headers": [
         {
           "key": "Cache-Control",
