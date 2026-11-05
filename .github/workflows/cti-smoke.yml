@@ -26,12 +26,13 @@ jobs:
           node-version: "22"
       - run: pip install -r requirements.txt
       - name: Python syntax
-        run: python -m py_compile main.py clinical_ai.py ia_provedores.py security_auth.py user_store.py segunda_fase.py atualizacoes.py
+        run: python -m py_compile main.py kotu_api.py clinical_ai.py ia_provedores.py security_auth.py user_store.py segunda_fase.py atualizacoes.py
       - name: JavaScript syntax
         run: |
           node --check static/app.js
           node --check static/cti-app-v31.js
           node --check static/mb32.js
+          node --check static/kotu.js
       - name: API smoke tests
         run: |
           python - <<'PY'
@@ -75,4 +76,14 @@ jobs:
           ref = c.get("/api/reforco")
           assert ref.status_code == 200, ref.text
           assert "temas" in ref.json()
+
+          # Kotu deve falhar de forma controlada sem chave, nunca derrubar o app.
+          k = c.post("/api/kotu/chat", json={"message":"Olá","history":[],"context":{"origin":"home"}})
+          assert k.status_code == 200, k.text
+          assert isinstance(k.json().get("ok"), bool)
+
+          # Radar de atualizações precisa existir independentemente de chave de IA.
+          ar = c.get("/api/atualizacoes/areas")
+          assert ar.status_code == 200, ar.text
+          assert "areas" in ar.json()
           PY
