@@ -85,6 +85,10 @@ jobs:
           assert k.status_code == 200, k.text
           assert isinstance(k.json().get("ok"), bool)
 
+          material = c.post("/api/kotu/estudo", json={"context":{"origin":"question","questionId":qid,"answered":True,"selectedOption":sel,"mode":"treino"}})
+          assert material.status_code == 200, material.text
+          assert isinstance(material.json().get("ok"), bool)
+
           # Radar de atualizações precisa existir independentemente de chave de IA.
           ar = c.get("/api/atualizacoes/areas")
           assert ar.status_code == 200, ar.text
