@@ -56,12 +56,26 @@
     document.getElementById('kotuLaunch').onclick=open;
     document.getElementById('kotuClose').onclick=close;
     document.getElementById('kotuForm').onsubmit=e=>{e.preventDefault();send(document.getElementById('kotuInput').value)};
-    new MutationObserver(()=>K.open&&sync()).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class']});
+    let syncQueued=false;
+    const scheduleSync=()=>{
+      if(!K.open||syncQueued)return;
+      syncQueued=true;
+      requestAnimationFrame(()=>{syncQueued=false;sync(false)});
+    };
+    // Observa apenas mudança de classes de navegação. Não observa childList:
+    // o próprio render do Kotu altera filhos e antes causava loop de MutationObserver.
+    new MutationObserver(scheduleSync).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+    window.addEventListener('popstate',scheduleSync);
+    window.addEventListener('hashchange',scheduleSync);
   }
   function open(){K.open=true;document.getElementById('kotuPanel').hidden=false;sync(true);setTimeout(()=>document.getElementById('kotuInput')?.focus(),30)}
   function close(){K.open=false;document.getElementById('kotuPanel').hidden=true}
+  let LAST_CTX='';
   function sync(force=false){
-    const c=ctx(); K.ctx=c;
+    const c=ctx();
+    const sig=JSON.stringify(c.payload||{})+'|'+c.label+'|'+String(c.locked);
+    if(!force && sig===LAST_CTX)return;
+    LAST_CTX=sig; K.ctx=c;
     document.getElementById('kotuContext').textContent='Contexto: '+c.label;
     document.getElementById('kotuLock').hidden=!c.locked;
     document.getElementById('kotuMsgs').hidden=c.locked;
