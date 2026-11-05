@@ -21,6 +21,13 @@
 - [x] Estabilização da IA NVIDIA: timeout, deduplicação, dica leve, thinking off
 
 ### Em andamento
+- [ ] Estabilização pós-MB33 / PWA
+  - [x] Diagnóstico do travamento do Kotu: loop de MutationObserver
+  - [ ] Corrigir Kotu sem observer recursivo e validar em produção
+  - [ ] Confirmação explícita ao salvar flashcards
+  - [ ] Atualização imediata do Caderno após importação de flashcards
+  - [ ] Auditoria PWA mobile/tablet e orientação landscape
+  - [ ] Smoke test PWA/manifest/service worker
 - [ ] MB33 — Material de Estudo Inteligente
   - [x] CTA após questão corrigida
   - [x] CTA após estação autoavaliada
@@ -33,7 +40,7 @@
   - [x] Regenerar conscientemente, sem duplicar chamada
   - [x] Não exibir durante Modo Prova
   - [x] Preview Vercel + CI + rota /api/kotu/estudo sem 500
-  - [ ] Validar geração real com NVIDIA em produção
+  - [x] Validar geração real com NVIDIA em produção
 
 ### Próximos macroblocos
 - [ ] MB34 — Atlas Visual vinculado a temas/estações
