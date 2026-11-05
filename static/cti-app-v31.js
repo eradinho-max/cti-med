@@ -1978,29 +1978,29 @@ function gerarSenhaAdmin(){
   return `Aa7!${core}`;
 }
 function adminSetupHtml(st){
-  if (st.mode !== 'supabase') return `<div class="admin-setup-box">
-    <h3>${ic('users')}Painel pronto para usuários persistentes</h3>
-    <p>O CTi continua funcionando normalmente com o administrador atual.</p>
-    <p class="small muted">Quando o Supabase exclusivo do CTi for criado, basta adicionar as variáveis de conexão na Vercel e aplicar o arquivo <b>supabase/cti_users.sql</b>. Nenhuma mudança visual adicional será necessária.</p>
+  const persistent = st.mode === 'postgres' || st.mode === 'supabase';
+  if (!persistent) return `<div class="admin-setup-box">
+    <h3>${ic('users')}Conta administrativa</h3>
+    <p>O CTi continua funcionando com o administrador atual.</p>
+    <p class="small muted">A sincronização entre dispositivos e a troca de senha pelo painel serão ativadas quando o armazenamento persistente estiver conectado.</p>
     <span class="pill">Modo atual · administrador único</span>
   </div>`;
   if (!st.ready && st.migration_required) return `<div class="admin-setup-box">
-    <h3>${ic('alert')}Conexão detectada — falta criar as tabelas</h3>
-    <p>O Supabase está configurado, mas as tabelas de usuários do CTi ainda não foram criadas.</p>
-    <p class="small muted">Execute <b>supabase/cti_users.sql</b> no SQL Editor do projeto Supabase e depois toque em Atualizar.</p>
+    <h3>${ic('alert')}Conexão detectada — falta concluir a preparação</h3>
+    <p class="small muted">O armazenamento persistente está conectado, mas a estrutura do CTi ainda não está pronta.</p>
   </div>`;
   if (!st.ready) return `<div class="admin-setup-box">
-    <h3>${ic('alert')}Banco de usuários temporariamente indisponível</h3>
-    <p class="small muted">O CTi mantém o acesso atual. Verifique as variáveis do Supabase e tente novamente.</p>
+    <h3>${ic('alert')}Armazenamento temporariamente indisponível</h3>
+    <p class="small muted">O acesso atual continua preservado. Tente novamente em instantes.</p>
   </div>`;
   if (st.bootstrap_available) return `<div class="admin-setup-box">
-    <h3>${ic('shield')}Banco conectado</h3>
-    <p>O banco está vazio. Migre o administrador atual para iniciar a gestão persistente de usuários.</p>
-    <button class="btn" id="adminBootstrap">${ic('users')}Migrar administrador atual</button>
-    <p class="tiny muted">Após a migração, o CTi solicitará um novo login.</p>
+    <h3>${ic('shield')}Armazenamento conectado</h3>
+    <p>Migre o administrador atual para ativar senha gerenciável e sincronização entre dispositivos.</p>
+    <button class="btn" id="adminBootstrap">${ic('users')}Ativar conta persistente</button>
+    <p class="tiny muted">Após a ativação, o CTi solicitará um novo login com o mesmo usuário e senha atuais.</p>
   </div>`;
   return `<div class="admin-setup-box">
-    <div class="row" style="justify-content:space-between"><div><h3>${ic('check')}Usuários persistentes ativos</h3><p class="small muted">Banco conectado e pronto.</p></div><span class="pill ok">Supabase conectado</span></div>
+    <div class="row" style="justify-content:space-between"><div><h3>${ic('check')}Conta persistente ativa</h3><p class="small muted">Senha e sincronização podem ser gerenciadas pelo CTi.</p></div><span class="pill ok">Sincronização disponível</span></div>
   </div>`;
 }
 async function renderAdmin(){
@@ -2013,7 +2013,7 @@ async function renderAdmin(){
     setup.innerHTML = adminSetupHtml(ADMIN_STATUS);
     const bootstrapBtn = $('#adminBootstrap');
     if (bootstrapBtn) bootstrapBtn.onclick = adminBootstrap;
-    const canManage = ADMIN_STATUS.mode === 'supabase' && ADMIN_STATUS.ready && !ADMIN_STATUS.bootstrap_available;
+    const canManage = ['postgres','supabase'].includes(ADMIN_STATUS.mode) && ADMIN_STATUS.ready && !ADMIN_STATUS.bootstrap_available;
     $('#adminPersistent').hidden = !canManage;
     if (canManage) await adminCarregarDados();
   } catch (e) {
