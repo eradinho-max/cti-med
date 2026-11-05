@@ -125,7 +125,7 @@ def build_kotu_router(by_id: dict, est_by_id: dict, exames_ocultos: set, conteud
         t0 = time.time()
         text, model, reason = ia_provedores.conversar(context, policy, [h.model_dump() for h in req.history], req.message.strip())
         if not text:
-            return {"ok": False, "reply": None, "code":"AI_UNAVAILABLE", "message":"Kotu está temporariamente indisponível.", "reason": reason}
+            return {"ok": False, "reply": None, "code":"AI_UNAVAILABLE", "message":"Kotu está temporariamente indisponível."}
         return {"ok": True, "reply": text, "meta": {"model": model, "latencyMs": int((time.time()-t0)*1000)}}
 
     @router.post("/api/cotu/chat", include_in_schema=False)
@@ -166,7 +166,7 @@ def build_kotu_router(by_id: dict, est_by_id: dict, exames_ocultos: set, conteud
         t0 = time.time()
         material, model, reason = ia_provedores.gerar_material_estudo(context, origin, area, theme)
         if not material:
-            return {"ok":False,"material":None,"code":"AI_UNAVAILABLE","message":"Kotu não conseguiu gerar o material agora.","reason":reason}
+            return {"ok":False,"material":None,"code":"AI_UNAVAILABLE","message":"Kotu não conseguiu gerar o material agora."}
         return {"ok":True,"material":material,"meta":{"model":model,"latencyMs":int((time.time()-t0)*1000),"schemaVersion":1,"source":{"origin":origin,"questionId":c.questionId,"stationId":c.stationId}}}
 
     @router.post("/api/cotu/estudo", include_in_schema=False)
