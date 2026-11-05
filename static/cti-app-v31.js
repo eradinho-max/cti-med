@@ -11,6 +11,7 @@ const ls = { get:(k, d) => { try { return JSON.parse(localStorage.getItem(k)) ??
 let IAC = ls.get('cti_ia_cache_v24', {});
 let MINIC = ls.get('cti_mini_estacoes_v28', {});
 let MINI_SESS = {};
+const IA_PENDING = new Map();
 const iaCache = id => { const x = IAC[id]; return x && Number(x.schema_version || 0) >= 4 ? x : undefined; };
 function iaGuardar(id, x){
   if (!x || x.fonte !== 'ia' || Number(x.schema_version || 0) < 4) return;
@@ -22,7 +23,19 @@ function toast(m){ const t = $('#toast'); t.textContent = m; t.classList.add('on
 const cookieVal = n => document.cookie.split('; ').find(x => x.startsWith(n + '='))?.split('=').slice(1).join('=') || '';
 async function api(url, opt={}){
   const cfg = Object.assign({credentials:'same-origin', cache:'no-store'}, opt || {});
-  let r; try { r = await fetch(url, cfg); } catch { throw new Error('sem conexão com a internet. Esta ação precisa estar on-line.'); }
+  const timeoutMs = Math.max(0, Number(cfg.timeoutMs || 0)); delete cfg.timeoutMs;
+  let timer=null, ownCtrl=null;
+  if (timeoutMs && !cfg.signal){
+    ownCtrl = new AbortController(); cfg.signal = ownCtrl.signal;
+    timer = setTimeout(() => ownCtrl.abort(), timeoutMs);
+  }
+  let r;
+  try { r = await fetch(url, cfg); }
+  catch(e){
+    if (e?.name === 'AbortError') throw new Error('A IA demorou mais que o esperado. Tente novamente.');
+    throw new Error('sem conexão com a internet. Esta ação precisa estar on-line.');
+  }
+  finally { if (timer) clearTimeout(timer); }
   if (r.status === 401){ location.replace('/?reason=session'); throw new Error('Sessão expirada. Entre novamente.'); }
   if (!r.ok){ let m = await r.text(); try { m = JSON.parse(m).detail || m; } catch {} throw new Error(typeof m === 'string' ? m : 'falha na requisição'); }
   return r.json(); }
@@ -615,10 +628,25 @@ function renderQuestao(){
   $('#qzNext').onclick = () => { if (prova && S.idx === S.questoes.length - 1) { S.idx = 0; return renderQuestao(); } S.idx++; renderQuestao(); };
   $('#qzConf') && ($('#qzConf').onclick = () => confirmar(q));
   $('#qzDicaBtn') && ($('#qzDicaBtn').onclick = async () => {
+    const btn=$('#qzDicaBtn'); if(btn.disabled) return; btn.disabled=true;
     $('#qzDica').innerHTML = `<div class="dica small muted">${ic('bulb')} Buscando a dica…</div>`;
-    const c = iaCache(q.id);
-    let d; try { d = c && c.dica ? {fonte:'ia', dicas:[c.dica]} : await api('/api/ia-dica/' + q.id, {headers:{'X-Question-Token':q._access || ''}}); } catch(e){ d = {fonte:'indisponivel', dicas:[]}; }
-    S.dicas[q.id] = d; $('#qzDica').innerHTML = dicaHtml(d); });
+    const cached = iaCache(q.id);
+    let d;
+    try {
+      if (cached?.dica) d={fonte:'ia',dicas:[cached.dica]};
+      else if (IA_PENDING.has(q.id)){
+        const full=await IA_PENDING.get(q.id);
+        d=full?.dica?{fonte:'ia',dicas:[full.dica]}:{fonte:'indisponivel',dicas:[]};
+      } else {
+        d=await api('/api/ia-dica/' + q.id, {
+          headers:{'X-Question-Token':q._access || ''},
+          timeoutMs:20000
+        });
+      }
+    } catch(e){ d={fonte:'indisponivel',dicas:[],motivo:e.message}; }
+    finally { btn.disabled=false; }
+    S.dicas[q.id]=d; $('#qzDica').innerHTML=dicaHtml(d);
+  });
   $('#qzFinal') && ($('#qzFinal').onclick = finalizarProva);
   ligarFav('#qzCard');
   if (respondida && S.explic[q.id]) setTimeout(moverNavAposIA, 0);
@@ -651,8 +679,21 @@ async function confirmar(q){
 /* ---------- IA: comentário salvo no aparelho → servidor (salvo → Gemini → fallback Gemini → NVIDIA) → "indisponível" */
 async function buscarIA(id, qToken='', answerToken=''){
   if (IAC[id]) return IAC[id];
-  let x; try { x = await api('/api/ia-explicar/' + id, {headers:{'X-Question-Token':qToken || '', 'X-Answer-Token':answerToken || ''}}); } catch(e){ x = {fonte:'indisponivel', motivo:e.message}; }
-  iaGuardar(id, x); return x;
+  if (IA_PENDING.has(id)) return IA_PENDING.get(id);
+  const req = (async()=>{
+    let x;
+    try {
+      x = await api('/api/ia-explicar/' + id, {
+        headers:{'X-Question-Token':qToken || '', 'X-Answer-Token':answerToken || ''},
+        timeoutMs:45000
+      });
+    } catch(e){ x = {fonte:'indisponivel', motivo:e.message}; }
+    iaGuardar(id, x);
+    return x;
+  })();
+  IA_PENDING.set(id, req);
+  try { return await req; }
+  finally { if (IA_PENDING.get(id) === req) IA_PENDING.delete(id); }
 }
 function iaIndispHtml(x, id){
   return `<div class="ia"><b class="row" style="gap:6px">${ic('ai')}IA Tutora</b>
