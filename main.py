@@ -290,6 +290,7 @@ def auth_status(request: Request):
         "configured": (SESSIONS.configured if AUTH_REQUIRED else True),
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
+        "sync_available": bool(u and u.source == "postgres" and SYNC_STORE.configured),
         "user": ({"username": u.username, "role": u.role} if u else None),
     }
 
