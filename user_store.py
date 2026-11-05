@@ -699,6 +699,11 @@ class PostgresUserStore:
         return int(row["n"] if row else 0)
 
     def authenticate(self, username: str, password: str) -> Optional[UserIdentity]:
+        # Durante bootstrap, mantém o administrador atual por env para evitar lockout.
+        if self.ready and self.count_users() == 0:
+            env_user = self.env_fallback.authenticate(username, password)
+            if env_user:
+                return env_user
         row = self._get_user_by_norm(normalize_username(username))
         stored = row.get("password_hash") if row else self._dummy_hash
         ok = self._verify(stored, password)
@@ -713,6 +718,8 @@ class PostgresUserStore:
                             int(row.get("session_version") or 1), "postgres")
 
     def validate_session(self, user: UserIdentity) -> Optional[UserIdentity]:
+        if user.source == "env" and self.ready and self.count_users() == 0:
+            return self.env_fallback.validate_session(user)
         if user.source != "postgres":
             return None
         row = self._get_user_by_id(user.user_id)
