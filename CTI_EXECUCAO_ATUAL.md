@@ -43,6 +43,15 @@
   - [x] Validar geração real com NVIDIA em produção
 
 ### Próximo macrobloco
+- [ ] Conta & Sincronia
+  - [x] Criar backend persistente exclusivo do CTI no Neon Free
+  - [ ] Usuário/senha persistentes fora das variáveis da Vercel
+  - [ ] Área de conta/admin com troca de senha
+  - [ ] Sincronizar progresso entre computador, celular e PWA
+  - [ ] Sincronizar erros, histórico, favoritos, metas, Caderno, flashcards e materiais
+  - [ ] Estratégia de conflito/offline segura
+  - [ ] Migração gradual mantendo login atual como fallback
+  - [ ] Testes multi-dispositivo
 - [ ] MB34 — Atlas Visual vinculado a temas/estações
 
 ### Depois do MB34
@@ -52,9 +61,9 @@
 - [ ] MB38 — Colaboração, somente após estabilidade do núcleo individual
 
 ## Pendências técnicas controladas
-- [ ] Cache global de comentários IA entre dispositivos (hoje: localStorage + arquivos pré-carregados)
-- [ ] Sincronização multi-dispositivo quando houver backend persistente dedicado
-- [ ] Migração futura para autenticação multiusuário/banco quando houver infraestrutura
+- [ ] Cache global de comentários IA entre dispositivos
+- [ ] Sincronização multi-dispositivo — incorporada ao bloco Conta & Sincronia
+- [ ] Migração de autenticação para Neon — incorporada ao bloco Conta & Sincronia
 - [ ] Revisar UX final do cronômetro do Modo Prova
 - [ ] Auditoria final de acessibilidade/mobile antes de encerrar ciclo de deploys
 
