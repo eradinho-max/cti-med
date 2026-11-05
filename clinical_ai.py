@@ -570,11 +570,12 @@ def enriquecer_mini_estacao_ia(q: dict) -> dict:
 
 
 def gerar_dica_ia(q: dict) -> dict:
-    """A dica vem do mesmo comentário (uma requisição serve para dica + explicação); só o campo 'dica' é enviado."""
+    """Dica curta sem spoiler; evita gerar comentário/farmacologia antes da resposta."""
     import ia_provedores
     p = ia_provedores.salvo(q)
-    if not p:
-        p, motivo = ia_provedores.gerar(q)
-        if not p:
-            return {"fonte": "indisponivel", "tema": q.get("tema"), "dicas": [], "motivo": motivo}
-    return {"fonte": "ia", "tema": q.get("tema"), "dicas": [p.get("dica")] if p.get("dica") else []}
+    if p and p.get("dica"):
+        return {"fonte": "ia", "tema": q.get("tema"), "dicas": [p.get("dica")], "modelo": p.get("modelo", "")}
+    dica, modelo, motivo = ia_provedores.gerar_dica_rapida(q)
+    if not dica:
+        return {"fonte": "indisponivel", "tema": q.get("tema"), "dicas": [], "motivo": motivo}
+    return {"fonte": "ia", "tema": q.get("tema"), "dicas": [dica], "modelo": modelo or ""}
