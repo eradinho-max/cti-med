@@ -1,0 +1,78 @@
+name: CTI Smoke Tests
+
+on:
+  push:
+    branches:
+      - main
+      - 'recovery/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CTI_REQUIRE_AUTH: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt
+      - name: Python syntax
+        run: python -m py_compile main.py clinical_ai.py ia_provedores.py security_auth.py user_store.py segunda_fase.py atualizacoes.py
+      - name: JavaScript syntax
+        run: |
+          node --check static/app.js
+          node --check static/cti-app-v31.js
+          node --check static/mb32.js
+      - name: API smoke tests
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          import main
+
+          c = TestClient(main.app)
+          assert c.get("/").status_code == 200
+
+          stats = c.get("/api/stats")
+          assert stats.status_code == 200, stats.text
+          assert stats.json()["total_questoes"] > 1000
+
+          indice = c.get("/api/indice")
+          assert indice.status_code == 200, indice.text
+          rows = indice.json()
+          assert len(rows) > 1000
+          qid = rows[0]["id"]
+
+          lote = c.post("/api/questoes/lote", json={"ids":[qid]})
+          assert lote.status_code == 200, lote.text
+          q = lote.json()["items"][0]
+          sel = next(letter for letter in "ABCDEFGH" if q.get("alt_"+letter))
+
+          resp = c.post("/api/responder", json={"question_id":qid, "selected_option":sel})
+          assert resp.status_code == 200, resp.text
+          assert resp.json().get("gabarito_oficial")
+
+          sim = c.post("/api/simulado", json={"n":10, "ordem":"aleatoria", "seed":"ci"})
+          assert sim.status_code == 200, sim.text
+          assert len(sim.json()["items"]) == 10
+
+          mis = c.post("/api/missao", json={"n":15, "modo":"equilibrada", "semente_usuario":"ci"})
+          assert mis.status_code == 200, mis.text
+          assert len(mis.json()["items"]) == 15
+
+          est = c.get("/api/estacoes")
+          assert est.status_code == 200, est.text
+          assert len(est.json()) > 0
+
+          ref = c.get("/api/reforco")
+          assert ref.status_code == 200, ref.text
+          assert "temas" in ref.json()
+          PY
