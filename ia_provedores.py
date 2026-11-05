@@ -1328,6 +1328,52 @@ def status() -> dict:
     }
 
 
+def _cadeia(msgs, aceitar, contexto="ia", max_tokens=4096):
+    """Pipeline genérico do Kotu sobre os provedores já usados pelo CTi."""
+    motivos = []
+    for p in PROVEDORES:
+        if not p.disponivel():
+            motivos.append(f"{p.nome}: pausado")
+            continue
+        for tentativa in range(2):
+            try:
+                resp = p.chamar(msgs, max_tokens=max_tokens)
+                item = aceitar(resp)
+                if item:
+                    p.ultimo_erro = ""
+                    return item, p.modelo, None
+                p.ultimo_erro = "resposta fora do formato esperado"
+                if tentativa == 0:
+                    continue
+            except urllib.error.HTTPError as ex:
+                body = _motivo_http(ex)
+                p.ultimo_erro = f"HTTP {ex.code}" + (f": {body[:120]}" if body else "")
+                if ex.code in (401, 403, 404):
+                    p.pausado_ate = time.time() + 600
+                    break
+                if ex.code == 429:
+                    p.pausado_ate = time.time() + _retry_after(ex, 90)
+                    break
+                if ex.code in (500, 502, 503, 504):
+                    if tentativa == 0:
+                        time.sleep(1.5)
+                        continue
+                    p.pausado_ate = time.time() + _retry_after(ex, 60)
+                    break
+                break
+            except Exception as ex:
+                p.ultimo_erro = ex.__class__.__name__
+                if tentativa == 0:
+                    time.sleep(0.5)
+                    continue
+                p.pausado_ate = time.time() + 30
+                break
+        motivos.append(f"{p.nome}: {p.ultimo_erro}")
+    if not PROVEDORES:
+        return None, None, "nenhuma chave de IA configurada"
+    return None, None, "; ".join(motivos)[:500]
+
+
 # -----------------------------------------------------------------------------
 # Kotu: assistente contextual e material de estudo
 SISTEMA_KOTU = """Você é o Kotu, assistente educacional de IA do CTi (Centro de Treinamento Intensivo), plataforma de estudo para
