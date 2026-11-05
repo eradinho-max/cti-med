@@ -1098,6 +1098,11 @@ def segunda_fase_pep(request: Request, edicao: str, force: bool = False):
         raise HTTPException(502, "Não foi possível ler o PEP oficial agora.")
 
 
+# Kotu fica isolado do núcleo do simulado: falha no assistente não derruba questões.
+from kotu_api import build_kotu_router
+app.include_router(build_kotu_router(BY_ID, EST_BY_ID, EXAMES_OCULTOS, CONTEUDO))
+
+
 @app.get("/sw.js", include_in_schema=False)
 def service_worker():
     """Service worker na raiz para que o escopo seja o app inteiro (em /static/ ele só controlaria /static/)."""
