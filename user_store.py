@@ -1,7 +1,7 @@
 """User stores do CTI.
 
 - EnvUserStore: compatibilidade com o administrador único atual.
-- SupabaseUserStore: usuários persistentes no Supabase via Data API (somente backend).
+- PostgresUserStore: usuários persistentes no Neon/Postgres (somente backend).\n- SupabaseUserStore: compatibilidade legada.
 
 O navegador nunca recebe a chave secreta do Supabase nem hashes de senha.
 """
@@ -601,16 +601,271 @@ class SupabaseUserStore:
         return r.json() if r.content else []
 
 
-class AutoUserStore:
-    """Seleciona Supabase quando as variáveis existem; caso contrário mantém o admin atual."""
+
+class PostgresUserStore:
+    """User store persistente no Neon/Postgres. A senha nunca sai do backend."""
+
+    mode = "postgres"
 
     def __init__(self) -> None:
+        self.url = (os.environ.get("CTI_DATABASE_URL", "").strip()
+                    or os.environ.get("DATABASE_URL", "").strip())
+        self.env_fallback = EnvUserStore()
+        self.hasher = PasswordHasher(
+            time_cost=max(2, min(int(os.environ.get("CTI_ARGON2_TIME_COST", "2")), 5)),
+            memory_cost=max(19456, min(int(os.environ.get("CTI_ARGON2_MEMORY_KIB", "32768")), 131072)),
+            parallelism=max(1, min(int(os.environ.get("CTI_ARGON2_PARALLELISM", "1")), 4)),
+            hash_len=32, salt_len=16,
+        )
+        self._dummy_hash = self.hasher.hash("cti-dummy-" + secrets.token_urlsafe(18))
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.url)
+
+    def _connect(self):
+        if not self.configured:
+            raise UserStoreError("Postgres não configurado")
+        try:
+            import psycopg
+            from psycopg.rows import dict_row
+            return psycopg.connect(self.url, connect_timeout=6, autocommit=True, row_factory=dict_row)
+        except Exception as exc:
+            raise UserStoreError("Falha de conexão com o banco de usuários") from exc
+
+    def _one(self, sql: str, params=()):
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute(sql, params)
+                return cur.fetchone()
+        except UserStoreError:
+            raise
+        except Exception as exc:
+            raise UserStoreError("Falha ao consultar o banco de usuários") from exc
+
+    def _all(self, sql: str, params=()):
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute(sql, params)
+                return list(cur.fetchall())
+        except UserStoreError:
+            raise
+        except Exception as exc:
+            raise UserStoreError("Falha ao consultar o banco de usuários") from exc
+
+    @property
+    def ready(self) -> bool:
+        try:
+            row = self._one("SELECT to_regclass('public.cti_users') AS t")
+            return bool(row and row.get("t"))
+        except UserStoreError:
+            return False
+
+    @staticmethod
+    def _public_row(row: dict) -> dict:
+        return {
+            "id": row.get("id"), "username": row.get("username"),
+            "role": row.get("role", "user"), "active": bool(row.get("active", True)),
+            "created_at": row.get("created_at"), "updated_at": row.get("updated_at"),
+            "last_login_at": row.get("last_login_at"),
+            "password_changed_at": row.get("password_changed_at"),
+            "source": "postgres",
+        }
+
+    def _get_user_by_norm(self, username_norm: str, include_deleted: bool=False):
+        sql = """SELECT id,username,username_norm,password_hash,role,active,session_version,
+                        created_at,updated_at,last_login_at,password_changed_at,deleted_at
+                 FROM cti_users WHERE username_norm=%s"""
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        return self._one(sql + " LIMIT 1", (username_norm,))
+
+    def _get_user_by_id(self, user_id: str, include_deleted: bool=False):
+        sql = """SELECT id,username,username_norm,password_hash,role,active,session_version,
+                        created_at,updated_at,last_login_at,password_changed_at,deleted_at
+                 FROM cti_users WHERE id=%s"""
+        if not include_deleted:
+            sql += " AND deleted_at IS NULL"
+        return self._one(sql + " LIMIT 1", (user_id,))
+
+    def _verify(self, stored_hash: str, password: str) -> bool:
+        try:
+            return bool(self.hasher.verify(stored_hash, password or ""))
+        except (VerifyMismatchError, VerificationError, InvalidHashError, ValueError):
+            return False
+
+    def count_users(self) -> int:
+        row = self._one("SELECT count(*) AS n FROM cti_users WHERE deleted_at IS NULL")
+        return int(row["n"] if row else 0)
+
+    def authenticate(self, username: str, password: str) -> Optional[UserIdentity]:
+        # Durante bootstrap, mantém o administrador atual por env para evitar lockout.
+        if self.ready and self.count_users() == 0:
+            env_user = self.env_fallback.authenticate(username, password)
+            if env_user:
+                return env_user
+        row = self._get_user_by_norm(normalize_username(username))
+        stored = row.get("password_hash") if row else self._dummy_hash
+        ok = self._verify(stored, password)
+        if not row or not ok or not row.get("active", True):
+            return None
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE cti_users SET last_login_at=now(), updated_at=now() WHERE id=%s", (row["id"],))
+        except Exception:
+            pass
+        return UserIdentity(row["username"], row["role"], str(row["id"]),
+                            int(row.get("session_version") or 1), "postgres")
+
+    def validate_session(self, user: UserIdentity) -> Optional[UserIdentity]:
+        if user.source == "env" and self.ready and self.count_users() == 0:
+            return self.env_fallback.validate_session(user)
+        if user.source != "postgres":
+            return None
+        row = self._get_user_by_id(user.user_id)
+        if not row or not row.get("active", True):
+            return None
+        if int(row.get("session_version") or 1) != int(user.session_version):
+            return None
+        return UserIdentity(row["username"], row["role"], str(row["id"]),
+                            int(row.get("session_version") or 1), "postgres")
+
+    def admin_status(self) -> dict:
+        ready = self.ready
+        n = self.count_users() if ready else 0
+        return {"mode":self.mode,"configured":self.configured,"ready":ready,
+                "persistent":True,"user_count":n,
+                "bootstrap_available":bool(ready and n == 0 and self.env_fallback.configured),
+                "migration_required":bool(self.configured and not ready)}
+
+    def list_users(self) -> List[dict]:
+        rows = self._all("""SELECT id,username,role,active,created_at,updated_at,last_login_at,
+                                   password_changed_at FROM cti_users
+                            WHERE deleted_at IS NULL ORDER BY created_at ASC""")
+        return [self._public_row(r) for r in rows]
+
+    def create_user(self, username: str, password: str, role: str="user", active: bool=True) -> dict:
+        import uuid
+        norm = normalize_username(username)
+        if not norm:
+            raise UserStoreError("Usuário inválido")
+        first = self.count_users() == 0
+        final_role = "admin" if first else role
+        row = {"id":str(uuid.uuid4()),"username":username.strip(),"norm":norm,
+               "hash":self.hasher.hash(password),"role":final_role,"active":bool(active)}
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("""INSERT INTO cti_users
+                    (id,username,username_norm,password_hash,role,active,session_version,password_changed_at)
+                    VALUES (%(id)s,%(username)s,%(norm)s,%(hash)s,%(role)s,%(active)s,1,now())
+                    RETURNING id,username,role,active,created_at,updated_at,last_login_at,password_changed_at""", row)
+                created = cur.fetchone()
+        except Exception as exc:
+            if exc.__class__.__name__ in ("UniqueViolation",):
+                raise DuplicateUserError("Usuário já existe") from exc
+            raise UserStoreError("Não foi possível criar o usuário") from exc
+        return self._public_row(created)
+
+    def bootstrap_env_admin(self) -> dict:
+        if not self.env_fallback.configured:
+            raise UserConflictError("Administrador atual não está configurado")
+        if self.count_users() != 0:
+            raise UserConflictError("O banco já possui usuários")
+        return self.create_user(self.env_fallback.username, self.env_fallback.password, "admin", True)
+
+    def update_user(self, user_id: str, *, username=None, role=None, active=None) -> dict:
+        current = self._get_user_by_id(user_id)
+        if not current:
+            raise UserNotFoundError("Usuário não encontrado")
+        sets=[]; vals=[]; revoke=False
+        if username is not None and username.strip() != current.get("username"):
+            sets += ["username=%s","username_norm=%s"]; vals += [username.strip(), normalize_username(username)]; revoke=True
+        if role is not None and role != current.get("role"):
+            sets.append("role=%s"); vals.append(role); revoke=True
+        if active is not None and bool(active) != bool(current.get("active", True)):
+            sets.append("active=%s"); vals.append(bool(active)); revoke=True
+        if revoke:
+            sets.append("session_version=session_version+1")
+        if not sets:
+            return self._public_row(current)
+        vals.append(user_id)
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE cti_users SET "+",".join(sets)+",updated_at=now() WHERE id=%s RETURNING id,username,role,active,created_at,updated_at,last_login_at,password_changed_at", vals)
+                row=cur.fetchone()
+        except Exception as exc:
+            if exc.__class__.__name__ == "UniqueViolation":
+                raise DuplicateUserError("Usuário já existe") from exc
+            raise UserStoreError("Não foi possível atualizar o usuário") from exc
+        if not row: raise UserNotFoundError("Usuário não encontrado")
+        return self._public_row(row)
+
+    def reset_password(self, user_id: str, password: str) -> dict:
+        if not self._get_user_by_id(user_id):
+            raise UserNotFoundError("Usuário não encontrado")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""UPDATE cti_users SET password_hash=%s,password_changed_at=now(),
+                           session_version=session_version+1,updated_at=now()
+                           WHERE id=%s
+                           RETURNING id,username,role,active,created_at,updated_at,last_login_at,password_changed_at""",
+                        (self.hasher.hash(password), user_id))
+            row=cur.fetchone()
+        return self._public_row(row)
+
+    def soft_delete_user(self, user_id: str) -> dict:
+        current=self._get_user_by_id(user_id)
+        if not current: raise UserNotFoundError("Usuário não encontrado")
+        suffix=str(user_id).replace("-","")[:10]
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""UPDATE cti_users SET active=false,deleted_at=now(),
+                    username_norm=%s,session_version=session_version+1,updated_at=now()
+                    WHERE id=%s RETURNING id,username,role,active,created_at,updated_at,last_login_at,password_changed_at""",
+                (f"deleted:{suffix}:{normalize_username(current.get('username') or 'user')}",user_id))
+            row=cur.fetchone()
+        return self._public_row(row)
+
+    def active_admin_count(self) -> int:
+        row=self._one("SELECT count(*) AS n FROM cti_users WHERE deleted_at IS NULL AND active=true AND role='admin'")
+        return int(row["n"] if row else 0)
+
+    def record_audit(self, *, actor=None, action: str, target_user_id=None, target_username=None,
+                     ip_fingerprint=None, metadata=None) -> None:
+        if not self.ready: return
+        try:
+            from psycopg.types.json import Jsonb
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("""INSERT INTO cti_audit_log
+                    (actor_user_id,actor_username,action,target_user_id,target_username,ip_fingerprint,metadata)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+                    (actor.user_id if actor and actor.source=="postgres" else None,
+                     actor.username if actor else None, action, target_user_id,target_username,
+                     ip_fingerprint, Jsonb(metadata or {})))
+        except Exception:
+            pass
+
+    def list_audit(self, limit: int=100) -> List[dict]:
+        n=max(1,min(int(limit),250))
+        return self._all("""SELECT id,actor_username,action,target_username,ip_fingerprint,metadata,created_at
+                            FROM cti_audit_log ORDER BY created_at DESC LIMIT %s""",(n,))
+
+
+class AutoUserStore:
+    """Seleciona Postgres/Neon, depois Supabase legado, senão mantém o admin atual."""
+
+    def __init__(self) -> None:
+        pg_url = (os.environ.get("CTI_DATABASE_URL", "").strip()
+                  or os.environ.get("DATABASE_URL", "").strip())
         probe_url = os.environ.get("CTI_SUPABASE_URL", "").strip()
         probe_key = (
             os.environ.get("CTI_SUPABASE_SECRET_KEY", "").strip()
             or os.environ.get("CTI_SUPABASE_SERVICE_ROLE_KEY", "").strip()
         )
-        self.impl = SupabaseUserStore() if (probe_url and probe_key) else EnvUserStore()
+        if pg_url:
+            self.impl = PostgresUserStore()
+        elif probe_url and probe_key:
+            self.impl = SupabaseUserStore()
+        else:
+            self.impl = EnvUserStore()
 
     def __getattr__(self, name: str):
         return getattr(self.impl, name)

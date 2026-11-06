@@ -100,7 +100,7 @@
     for(const m of K.msgs){
       h += m.role==='user'
         ? '<div class="kotu-m user"><div class="kotu-b">'+esc(m.content)+'</div></div>'
-        : '<div class="kotu-m"><img src="'+AV+'" alt=""><div class="kotu-b '+(m.role==='error'?'err':'')+'">'+(m.role==='error'?esc(m.content):md(m.content))+(m.model?'<small>'+esc(m.model)+'</small>':'')+'</div></div>';
+        : '<div class="kotu-m"><img src="'+AV+'" alt=""><div class="kotu-b '+(m.role==='error'?'err':'')+'">'+(m.role==='error'?esc(m.content):md(m.content))+'</div></div>';
     }
     if(K.busy)h+='<div class="kotu-m"><img src="'+AV+'" alt=""><div class="kotu-b">Pensando…</div></div>';
     box.innerHTML=h; box.scrollTop=box.scrollHeight;
@@ -123,7 +123,7 @@
     try{
       const j=await call('/api/kotu/chat',{message:text,history:hist,context:c.payload});
       if(!j.ok||!j.reply)throw new Error(j.message||'Kotu está temporariamente indisponível.');
-      K.msgs.push({role:'assistant',content:j.reply,model:j.meta?.model||''});
+      K.msgs.push({role:'assistant',content:j.reply});
     }catch(e){K.msgs.push({role:'error',content:e.message||'Kotu está indisponível.'})}
     K.busy=false;render();
   }
@@ -145,7 +145,7 @@
         '\n## Além da questão\n'+(m.alem_da_questao||[]).map(x=>'• '+x).join('\n'),
         '\n## Flashcards\n'+(m.flashcards||[]).map(x=>'P: '+x.frente+'\nR: '+x.verso).join('\n\n')
       ].filter(Boolean).join('\n');
-      K.msgs.push({role:'assistant',content:txt,model:j.meta?.model||''});
+      K.msgs.push({role:'assistant',content:txt});
     }catch(e){K.msgs.push({role:'error',content:e.message||'Não foi possível gerar o material.'})}
     K.busy=false;render();
   }

@@ -23,6 +23,7 @@ from security_auth import SessionManager
 from user_store import (
     DuplicateUserError, UserConflictError, UserIdentity, UserNotFoundError, UserStoreError,
 )
+from sync_store import SyncStore, SyncStoreError, SyncConflict
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(BASE, "static")
@@ -41,6 +42,7 @@ MAX_BODY_BYTES = int(os.environ.get("CTI_MAX_BODY_BYTES", "1048576"))
 AUTH_REQUIRED = os.environ.get("CTI_REQUIRE_AUTH", "1" if PROD else "0").strip().lower() not in ("0", "false", "no", "off")
 EXAMES_OCULTOS = {e.strip() for e in os.environ.get("CTI_OCULTAR_EXAMES", "").split(",") if e.strip()}
 SESSIONS = SessionManager(PROD)
+SYNC_STORE = SyncStore()
 
 app = FastAPI(title="CTi – Centro de Treinamento Intensivo",
               docs_url=None if PROD else "/docs", redoc_url=None, openapi_url=None if PROD else "/openapi.json")
@@ -88,7 +90,7 @@ def _persistent_audit(
     target_user_id: Optional[str] = None, target_username: Optional[str] = None,
     metadata: Optional[dict] = None,
 ) -> None:
-    """Auditoria administrativa persistente quando o Supabase estiver ativo."""
+    """Auditoria administrativa persistente quando um banco persistente estiver ativo."""
     try:
         SESSIONS.store.record_audit(
             actor=actor, action=action, target_user_id=target_user_id,
@@ -288,6 +290,7 @@ def auth_status(request: Request):
         "configured": (SESSIONS.configured if AUTH_REQUIRED else True),
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
+        "sync_available": bool(u and u.source == "postgres" and SYNC_STORE.configured),
         "user": ({"username": u.username, "role": u.role} if u else None),
     }
 
@@ -398,6 +401,17 @@ class AdminPasswordReset(BaseModel):
     password: str = Field(min_length=12, max_length=256)
 
 
+class AccountPasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class SyncStatePut(BaseModel):
+    namespace: str = Field(default="progress", pattern=r"^(progress|study|training)$")
+    base_version: Optional[int] = Field(default=None, ge=0)
+    data: Dict[str, object]
+
+
 def _valid_username(value: str) -> str:
     v = (value or "").strip()
     if not USERNAME_RE.fullmatch(v):
@@ -408,11 +422,11 @@ def _valid_username(value: str) -> str:
 def _require_persistent_store(request: Request):
     _admin(request)
     status = SESSIONS.store.admin_status()
-    if status.get("mode") != "supabase":
+    if status.get("mode") not in ("postgres", "supabase"):
         raise HTTPException(503, "O banco persistente ainda não foi conectado.")
     if not status.get("ready"):
         if status.get("migration_required"):
-            raise HTTPException(503, "As tabelas do CTI ainda não foram criadas no Supabase.")
+            raise HTTPException(503, "As tabelas persistentes do CTI ainda não foram criadas.")
         raise HTTPException(503, "O banco de usuários está temporariamente indisponível.")
     return status
 
@@ -526,6 +540,67 @@ def admin_user_reset_password(user_id: str, data: AdminPasswordReset, request: R
     _audit("admin_user_password_reset", request, current, f"target={updated.get('username')}")
     _persistent_audit("user.password_reset", request, current, updated.get("id"), updated.get("username"))
     return {"ok": True, "user": updated, "sessions_revoked": True}
+
+
+
+@app.post("/api/account/password")
+def account_change_password(data: AccountPasswordChange, request: Request):
+    current = _user(request)
+    if not current:
+        raise HTTPException(401, "Sessão expirada")
+    if current.source != "postgres":
+        raise HTTPException(409, "Conclua primeiro a migração da sua conta para o armazenamento persistente.")
+    try:
+        verified = SESSIONS.store.authenticate(current.username, data.current_password)
+        if not verified or str(verified.user_id) != str(current.user_id):
+            raise HTTPException(401, "Senha atual incorreta.")
+        updated = SESSIONS.store.reset_password(current.user_id, data.new_password)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _map_store_error(exc)
+    _audit("account_password_change", request, current)
+    _persistent_audit("user.password_change_self", request, current, updated.get("id"), updated.get("username"))
+    resp = JSONResponse({"ok": True, "relogin_required": True})
+    SESSIONS.clear_cookie(resp)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+def _sync_user(request: Request) -> UserIdentity:
+    u = _user(request)
+    if not u:
+        raise HTTPException(401, "Sessão expirada")
+    if u.source != "postgres":
+        raise HTTPException(409, "A sincronização será ativada após a migração da conta.")
+    if not SYNC_STORE.configured:
+        raise HTTPException(503, "Sincronização temporariamente indisponível.")
+    return u
+
+
+@app.get("/api/sync/state")
+def sync_state_get(request: Request, namespace: str = Query("progress", pattern=r"^(progress|study|training)$")):
+    u = _sync_user(request)
+    try:
+        current = SYNC_STORE.get(u.user_id, namespace)
+    except SyncStoreError:
+        raise HTTPException(503, "Não foi possível carregar a sincronização agora.")
+    if not current:
+        return {"ok": True, "namespace": namespace, "data": {}, "version": 0, "updated_at": None}
+    return {"ok": True, **current}
+
+
+@app.put("/api/sync/state")
+def sync_state_put(data: SyncStatePut, request: Request):
+    u = _sync_user(request)
+    try:
+        saved = SYNC_STORE.put(u.user_id, dict(data.data), data.base_version, data.namespace)
+    except SyncConflict as exc:
+        return JSONResponse({"detail": "SYNC_CONFLICT", "current": exc.current}, status_code=409,
+                            headers={"Cache-Control": "no-store"})
+    except SyncStoreError:
+        raise HTTPException(503, "Não foi possível salvar a sincronização agora.")
+    return {"ok": True, **saved}
 
 
 @app.delete("/api/admin/users/{user_id}")
