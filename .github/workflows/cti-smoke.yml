@@ -38,6 +38,49 @@ jobs:
           node --check static/kotu.js
           node --check static/sync.js
           node --check static/sw.js
+      - name: Explicit account migration logic
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, timezone
+          os.environ["CTI_ACCESS_USERNAME"]="test-admin"
+          os.environ["CTI_ACCESS_PASSWORD"]="Old-Test-Passphrase-123!"
+          from argon2 import PasswordHasher
+          from user_store import PostgresUserStore
+
+          class FakeStore(PostgresUserStore):
+              def __init__(self):
+                  self.url="postgresql://fake"
+                  from user_store import EnvUserStore
+                  self.env_fallback=EnvUserStore()
+                  self.hasher=PasswordHasher()
+                  self._dummy_hash=self.hasher.hash("dummy")
+                  now=datetime.now(timezone.utc)
+                  self.row={
+                      "id":"u1","username":"test-admin","username_norm":"test-admin",
+                      "password_hash":self.hasher.hash("unusable-random-secret"),
+                      "role":"admin","active":True,"session_version":1,
+                      "created_at":now,"updated_at":now,"last_login_at":None,
+                      "password_changed_at":now,"deleted_at":None,
+                  }
+              @property
+              def ready(self): return True
+              def _get_user_by_norm(self, username_norm, include_deleted=False):
+                  return self.row if username_norm=="test-admin" else None
+              def _get_user_by_id(self, user_id, include_deleted=False):
+                  return self.row if user_id=="u1" else None
+              def count_users(self): return 1
+
+          s=FakeStore()
+          assert s.migration_pending is True
+          u=s.authenticate("test-admin","Old-Test-Passphrase-123!")
+          assert u and u.source=="migration-env" and u.user_id=="u1"
+          assert s.authenticate("test-admin","wrong-password") is None
+          s.row["last_login_at"]=datetime.now(timezone.utc)
+          assert s.migration_pending is False
+          assert s.authenticate("test-admin","Old-Test-Passphrase-123!") is None
+          print("explicit migration fallback OK")
+          PY
       - name: PWA integrity
         run: |
           python - <<'PY'
