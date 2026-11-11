@@ -1993,11 +1993,16 @@ function adminSetupHtml(st){
     <h3>${ic('alert')}Armazenamento temporariamente indisponível</h3>
     <p class="small muted">O acesso atual continua preservado. Tente novamente em instantes.</p>
   </div>`;
+  if (st.activation_required) return `<div class="admin-setup-box">
+    <h3>${ic('shield')}Definir nova senha persistente</h3>
+    <p>A conexão com o banco está pronta. Defina agora uma nova senha para concluir a ativação sem copiar sua senha antiga.</p>
+    <button class="btn" id="adminActivatePassword">${ic('lock')}Definir nova senha</button>
+    <p class="tiny muted">A senha antiga continua válida somente enquanto esta ativação estiver pendente.</p>
+  </div>`;
   if (st.bootstrap_available) return `<div class="admin-setup-box">
     <h3>${ic('shield')}Armazenamento conectado</h3>
-    <p>Migre o administrador atual para ativar senha gerenciável e sincronização entre dispositivos.</p>
-    <button class="btn" id="adminBootstrap">${ic('users')}Ativar conta persistente</button>
-    <p class="tiny muted">Após a ativação, o CTi solicitará um novo login com o mesmo usuário e senha atuais.</p>
+    <p>Prepare a conta persistente. Na próxima etapa você definirá uma nova senha.</p>
+    <button class="btn" id="adminBootstrap">${ic('users')}Preparar conta persistente</button>
   </div>`;
   return `<div class="admin-setup-box">
     <div class="row" style="justify-content:space-between"><div><h3>${ic('check')}Conta persistente ativa</h3><p class="small muted">Senha e sincronização podem ser gerenciadas pelo CTi.</p></div><span class="pill ok">Sincronização disponível</span></div>
@@ -2013,6 +2018,8 @@ async function renderAdmin(){
     setup.innerHTML = adminSetupHtml(ADMIN_STATUS);
     const bootstrapBtn = $('#adminBootstrap');
     if (bootstrapBtn) bootstrapBtn.onclick = adminBootstrap;
+    const activateBtn = $('#adminActivatePassword');
+    if (activateBtn) activateBtn.onclick = adminActivatePassword;
     const canManage = ['postgres','supabase'].includes(ADMIN_STATUS.mode) && ADMIN_STATUS.ready && !ADMIN_STATUS.bootstrap_available;
     $('#adminPersistent').hidden = !canManage;
     if (canManage) await adminCarregarDados();
@@ -2021,15 +2028,25 @@ async function renderAdmin(){
   }
 }
 async function adminBootstrap(){
-  if (!confirm('Migrar o administrador atual para o banco persistente do CTi?')) return;
+  if (!confirm('Preparar a conta persistente do CTi? Sua senha atual não será copiada.')) return;
   try {
-    const r = await post('/api/admin/users/bootstrap', {});
+    await post('/api/admin/users/bootstrap', {});
+    await renderAdmin();
+  } catch (e) { toast(e.message); }
+}
+async function adminActivatePassword(){
+  const a = prompt('Digite a nova senha persistente (mínimo 12 caracteres):');
+  if (!a) return;
+  if (a.length < 12){ toast('Use pelo menos 12 caracteres.'); return; }
+  const b = prompt('Confirme a nova senha:');
+  if (a !== b){ toast('As senhas não coincidem.'); return; }
+  try {
+    const r = await post('/api/account/activate', {new_password:a});
     if (r.relogin_required){
-      alert('Administrador migrado. Entre novamente com o mesmo usuário e senha.');
-      location.replace('/?reason=users-migrated');
+      alert('Conta persistente ativada. Entre novamente com a nova senha.');
+      location.replace('/?reason=account-activated');
       return;
     }
-    await renderAdmin();
   } catch (e) { toast(e.message); }
 }
 async function adminCarregarDados(){
