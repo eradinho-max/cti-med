@@ -13,8 +13,8 @@ class SyncConflict(SyncStoreError):
 
 class SyncStore:
     def __init__(self) -> None:
-        self.url=(os.environ.get("CTI_DATABASE_URL","").strip()
-                  or os.environ.get("DATABASE_URL","").strip())
+        self.url=(os.environ.get("CTI_SYNC_DATABASE_URL","").strip()
+                  or os.environ.get("CTI_DATABASE_URL","").strip())
 
     @property
     def configured(self)->bool:
@@ -29,6 +29,23 @@ class SyncStore:
             return psycopg.connect(self.url,connect_timeout=6,autocommit=True,row_factory=dict_row)
         except Exception as exc:
             raise SyncStoreError("Falha de conexão com sincronização") from exc
+
+    def resolve_user_id(self, username: str) -> Optional[str]:
+        """Resolve o principal de sincronização sem participar da autenticação."""
+        norm=(username or "").strip().casefold()
+        if not norm:
+            return None
+        try:
+            with self._connect() as conn, conn.cursor() as cur:
+                cur.execute("""SELECT id FROM cti_users
+                               WHERE username_norm=%s AND deleted_at IS NULL AND active=true
+                               LIMIT 1""",(norm,))
+                row=cur.fetchone()
+            return str(row["id"]) if row else None
+        except SyncStoreError:
+            raise
+        except Exception as exc:
+            raise SyncStoreError("Falha ao resolver usuário de sincronização") from exc
 
     def get(self,user_id:str,namespace:str="study")->Optional[dict]:
         try:
