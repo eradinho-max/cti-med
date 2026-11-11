@@ -290,8 +290,8 @@ def auth_status(request: Request):
         "configured": (SESSIONS.configured if AUTH_REQUIRED else True),
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
-        "sync_available": bool(u and u.source == "postgres" and SYNC_STORE.configured),
-        "activation_required": bool(u and u.source == "migration-env"),
+        "sync_available": bool(u and SYNC_STORE.configured),
+        "activation_required": False,
         "user": ({"username": u.username, "role": u.role} if u else None),
     }
 
@@ -376,6 +376,7 @@ def admin_security_status(request: Request):
         "max_body_bytes": MAX_BODY_BYTES,
         "rbac_ready": True,
         "current_store": SESSIONS.store.mode,
+        "sync_store_configured": bool(SYNC_STORE.configured),
         "persistent_users": bool(SESSIONS.store.admin_status().get("persistent")),
         "user_store_ready": bool(SESSIONS.store.admin_status().get("ready")),
     }
@@ -594,22 +595,25 @@ def account_change_password(data: AccountPasswordChange, request: Request):
     return resp
 
 
-def _sync_user(request: Request) -> UserIdentity:
+def _sync_user(request: Request) -> tuple[UserIdentity, str]:
     u = _user(request)
     if not u:
         raise HTTPException(401, "Sessão expirada")
-    if u.source != "postgres":
-        raise HTTPException(409, "A sincronização será ativada após a migração da conta.")
     if not SYNC_STORE.configured:
         raise HTTPException(503, "Sincronização temporariamente indisponível.")
-    return u
-
+    try:
+        sync_user_id = SYNC_STORE.resolve_user_id(u.username)
+    except SyncStoreError:
+        raise HTTPException(503, "Não foi possível identificar sua conta de sincronização agora.")
+    if not sync_user_id:
+        raise HTTPException(409, "Sua conta ainda não está vinculada à sincronização.")
+    return u, sync_user_id
 
 @app.get("/api/sync/state")
 def sync_state_get(request: Request, namespace: str = Query("progress", pattern=r"^(progress|study|training)$")):
-    u = _sync_user(request)
+    u, sync_user_id = _sync_user(request)
     try:
-        current = SYNC_STORE.get(u.user_id, namespace)
+        current = SYNC_STORE.get(sync_user_id, namespace)
     except SyncStoreError:
         raise HTTPException(503, "Não foi possível carregar a sincronização agora.")
     if not current:
@@ -619,9 +623,9 @@ def sync_state_get(request: Request, namespace: str = Query("progress", pattern=
 
 @app.put("/api/sync/state")
 def sync_state_put(data: SyncStatePut, request: Request):
-    u = _sync_user(request)
+    u, sync_user_id = _sync_user(request)
     try:
-        saved = SYNC_STORE.put(u.user_id, dict(data.data), data.base_version, data.namespace)
+        saved = SYNC_STORE.put(sync_user_id, dict(data.data), data.base_version, data.namespace)
     except SyncConflict as exc:
         return JSONResponse({"detail": "SYNC_CONFLICT", "current": exc.current}, status_code=409,
                             headers={"Cache-Control": "no-store"})
