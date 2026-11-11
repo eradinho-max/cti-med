@@ -698,55 +698,82 @@ class PostgresUserStore:
         row = self._one("SELECT count(*) AS n FROM cti_users WHERE deleted_at IS NULL")
         return int(row["n"] if row else 0)
 
+    def _migration_pending_row(self) -> Optional[dict]:
+        if not self.ready or not self.env_fallback.configured:
+            return None
+        row = self._get_user_by_norm(normalize_username(self.env_fallback.username))
+        if not row or not row.get("active", True) or str(row.get("role") or "") != "admin":
+            return None
+        if row.get("last_login_at") is not None:
+            return None
+        try:
+            created = row.get("created_at")
+            changed = row.get("password_changed_at")
+            if not created or not changed:
+                return None
+            if abs((changed - created).total_seconds()) > 10:
+                return None
+        except Exception:
+            return None
+        return row
+
+    @property
+    def migration_pending(self) -> bool:
+        try:
+            return self._migration_pending_row() is not None
+        except Exception:
+            return False
+
+    def activate_env_admin(self, new_password: str) -> dict:
+        row = self._migration_pending_row()
+        if not row:
+            raise UserConflictError("A ativação persistente não está pendente.")
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""UPDATE cti_users
+                           SET password_hash=%s,password_changed_at=now(),
+                               session_version=session_version+1,updated_at=now()
+                           WHERE id=%s
+                           RETURNING id,username,role,active,created_at,updated_at,last_login_at,password_changed_at""",
+                        (self.hasher.hash(new_password), row["id"]))
+            updated = cur.fetchone()
+        return self._public_row(updated)
+
     def authenticate(self, username: str, password: str) -> Optional[UserIdentity]:
-        # Durante bootstrap, mantém o administrador atual por env para evitar lockout.
-        if self.ready and self.count_users() == 0:
-            env_user = self.env_fallback.authenticate(username, password)
-            if env_user:
-                return env_user
         row = self._get_user_by_norm(normalize_username(username))
         stored = row.get("password_hash") if row else self._dummy_hash
         ok = self._verify(stored, password)
 
-        # Recuperação limitada ao primeiro bootstrap: se o hash persistente inicial
-        # divergir por qualquer motivo, aceita a credencial antiga do ambiente apenas
-        # enquanto password_changed_at ainda coincide com created_at. Ao recuperar,
-        # regrava o hash no Neon e passa a autenticar normalmente como Postgres.
-        if row and not ok and row.get("active", True) and str(row.get("role") or "") == "admin":
-            bootstrap_initial = False
+        if row and ok and row.get("active", True):
             try:
-                created = row.get("created_at")
-                changed = row.get("password_changed_at")
-                if created and changed:
-                    bootstrap_initial = abs((changed - created).total_seconds()) <= 10
+                with self._connect() as conn, conn.cursor() as cur:
+                    cur.execute("UPDATE cti_users SET last_login_at=now(), updated_at=now() WHERE id=%s", (row["id"],))
             except Exception:
-                bootstrap_initial = False
-            if bootstrap_initial:
-                env_user = self.env_fallback.authenticate(username, password)
-                if env_user:
-                    try:
-                        with self._connect() as conn, conn.cursor() as cur:
-                            cur.execute("""UPDATE cti_users
-                                           SET password_hash=%s,password_changed_at=now(),updated_at=now()
-                                           WHERE id=%s""",
-                                        (self.hasher.hash(password), row["id"]))
-                        ok = True
-                    except Exception:
-                        ok = False
+                pass
+            return UserIdentity(row["username"], row["role"], str(row["id"]),
+                                int(row.get("session_version") or 1), "postgres")
 
-        if not row or not ok or not row.get("active", True):
-            return None
-        try:
-            with self._connect() as conn, conn.cursor() as cur:
-                cur.execute("UPDATE cti_users SET last_login_at=now(), updated_at=now() WHERE id=%s", (row["id"],))
-        except Exception:
-            pass
-        return UserIdentity(row["username"], row["role"], str(row["id"]),
-                            int(row.get("session_version") or 1), "postgres")
+        # Durante a ativação pendente, a senha antiga da Vercel continua válida
+        # exclusivamente para o administrador original. Ela NÃO é copiada para o banco.
+        pending = self._migration_pending_row()
+        if pending:
+            env_user = self.env_fallback.authenticate(username, password)
+            if env_user and normalize_username(username) == normalize_username(pending.get("username") or ""):
+                return UserIdentity(pending["username"], "admin", str(pending["id"]),
+                                    int(pending.get("session_version") or 1), "migration-env")
+        return None
 
     def validate_session(self, user: UserIdentity) -> Optional[UserIdentity]:
-        if user.source == "env" and self.ready and self.count_users() == 0:
-            return self.env_fallback.validate_session(user)
+        if user.source == "migration-env":
+            row = self._migration_pending_row()
+            if not row or str(row.get("id")) != str(user.user_id):
+                return None
+            env_user = self.env_fallback.validate_session(
+                UserIdentity(self.env_fallback.username, "admin", "env-admin", 1, "env")
+            )
+            if not env_user:
+                return None
+            return UserIdentity(row["username"], "admin", str(row["id"]),
+                                int(row.get("session_version") or 1), "migration-env")
         if user.source != "postgres":
             return None
         row = self._get_user_by_id(user.user_id)
@@ -760,9 +787,11 @@ class PostgresUserStore:
     def admin_status(self) -> dict:
         ready = self.ready
         n = self.count_users() if ready else 0
+        pending = self.migration_pending if ready else False
         return {"mode":self.mode,"configured":self.configured,"ready":ready,
                 "persistent":True,"user_count":n,
                 "bootstrap_available":bool(ready and n == 0 and self.env_fallback.configured),
+                "activation_required":bool(pending),
                 "migration_required":bool(self.configured and not ready)}
 
     def list_users(self) -> List[dict]:
