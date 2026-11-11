@@ -38,6 +38,23 @@ jobs:
           node --check static/kotu.js
           node --check static/sync.js
           node --check static/sw.js
+      - name: Auth and sync decoupling
+        run: |
+          python - <<'PY'
+          import os
+          os.environ["CTI_ACCESS_USERNAME"]="admin"
+          os.environ["CTI_ACCESS_PASSWORD"]="Password-123!"
+          os.environ["CTI_DATABASE_URL"]="postgresql://should-not-control-auth"
+          os.environ.pop("CTI_AUTH_BACKEND",None)
+          from user_store import AutoUserStore
+          s=AutoUserStore()
+          assert s.mode=="environment-single-admin", s.mode
+          assert s.authenticate("admin","Password-123!")
+          from sync_store import SyncStore
+          sync=SyncStore()
+          assert sync.configured is True
+          print("auth/sync decoupling OK")
+          PY
       - name: Explicit account migration logic
         run: |
           python - <<'PY'
