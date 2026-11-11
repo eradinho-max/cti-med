@@ -827,7 +827,11 @@ class PostgresUserStore:
             raise UserConflictError("Administrador atual não está configurado")
         if self.count_users() != 0:
             raise UserConflictError("O banco já possui usuários")
-        return self.create_user(self.env_fallback.username, self.env_fallback.password, "admin", True)
+        # Nunca copie a senha antiga do ambiente para o banco persistente.
+        # Cria um hash aleatório impossível de conhecer; a conta permanece em
+        # activation_required até o proprietário definir uma nova senha.
+        temporary_secret = secrets.token_urlsafe(64)
+        return self.create_user(self.env_fallback.username, temporary_secret, "admin", True)
 
     def update_user(self, user_id: str, *, username=None, role=None, active=None) -> dict:
         current = self._get_user_by_id(user_id)
