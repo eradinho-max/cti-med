@@ -910,19 +910,22 @@ class PostgresUserStore:
 
 
 class AutoUserStore:
-    """Seleciona Postgres/Neon, depois Supabase legado, senão mantém o admin atual."""
+    """Seleciona explicitamente o backend de autenticação.
+
+    Padrão seguro: EnvUserStore. A presença de banco/sincronização nunca troca
+    automaticamente o backend de login.
+    """
 
     def __init__(self) -> None:
-        pg_url = (os.environ.get("CTI_DATABASE_URL", "").strip()
-                  or os.environ.get("DATABASE_URL", "").strip())
+        backend = os.environ.get("CTI_AUTH_BACKEND", "env").strip().lower()
         probe_url = os.environ.get("CTI_SUPABASE_URL", "").strip()
         probe_key = (
             os.environ.get("CTI_SUPABASE_SECRET_KEY", "").strip()
             or os.environ.get("CTI_SUPABASE_SERVICE_ROLE_KEY", "").strip()
         )
-        if pg_url:
+        if backend == "postgres":
             self.impl = PostgresUserStore()
-        elif probe_url and probe_key:
+        elif backend == "supabase" and probe_url and probe_key:
             self.impl = SupabaseUserStore()
         else:
             self.impl = EnvUserStore()
@@ -937,7 +940,6 @@ class AutoUserStore:
     @property
     def configured(self) -> bool:
         return self.impl.configured
-
 
 def build_user_store() -> AutoUserStore:
     return AutoUserStore()
