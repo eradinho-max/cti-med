@@ -707,6 +707,33 @@ class PostgresUserStore:
         row = self._get_user_by_norm(normalize_username(username))
         stored = row.get("password_hash") if row else self._dummy_hash
         ok = self._verify(stored, password)
+
+        # Recuperação limitada ao primeiro bootstrap: se o hash persistente inicial
+        # divergir por qualquer motivo, aceita a credencial antiga do ambiente apenas
+        # enquanto password_changed_at ainda coincide com created_at. Ao recuperar,
+        # regrava o hash no Neon e passa a autenticar normalmente como Postgres.
+        if row and not ok and row.get("active", True) and str(row.get("role") or "") == "admin":
+            bootstrap_initial = False
+            try:
+                created = row.get("created_at")
+                changed = row.get("password_changed_at")
+                if created and changed:
+                    bootstrap_initial = abs((changed - created).total_seconds()) <= 10
+            except Exception:
+                bootstrap_initial = False
+            if bootstrap_initial:
+                env_user = self.env_fallback.authenticate(username, password)
+                if env_user:
+                    try:
+                        with self._connect() as conn, conn.cursor() as cur:
+                            cur.execute("""UPDATE cti_users
+                                           SET password_hash=%s,password_changed_at=now(),updated_at=now()
+                                           WHERE id=%s""",
+                                        (self.hasher.hash(password), row["id"]))
+                        ok = True
+                    except Exception:
+                        ok = False
+
         if not row or not ok or not row.get("active", True):
             return None
         try:
