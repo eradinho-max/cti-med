@@ -291,6 +291,7 @@ def auth_status(request: Request):
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
         "sync_available": bool(u and u.source == "postgres" and SYNC_STORE.configured),
+        "activation_required": bool(u and u.source == "migration-env"),
         "user": ({"username": u.username, "role": u.role} if u else None),
     }
 
@@ -403,6 +404,10 @@ class AdminPasswordReset(BaseModel):
 
 class AccountPasswordChange(BaseModel):
     current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class AccountActivation(BaseModel):
     new_password: str = Field(min_length=12, max_length=256)
 
 
@@ -541,6 +546,28 @@ def admin_user_reset_password(user_id: str, data: AdminPasswordReset, request: R
     _persistent_audit("user.password_reset", request, current, updated.get("id"), updated.get("username"))
     return {"ok": True, "user": updated, "sessions_revoked": True}
 
+
+
+@app.post("/api/account/activate")
+def account_activate(data: AccountActivation, request: Request):
+    current = _user(request)
+    if not current:
+        raise HTTPException(401, "Sessão expirada")
+    if current.source != "migration-env":
+        raise HTTPException(409, "A ativação persistente não está pendente.")
+    try:
+        activate = getattr(SESSIONS.store, "activate_env_admin", None)
+        if not callable(activate):
+            raise UserConflictError("A ativação persistente não está disponível.")
+        updated = activate(data.new_password)
+    except Exception as exc:
+        _map_store_error(exc)
+    _audit("account_activation", request, current)
+    _persistent_audit("user.activate_persistent", request, current, updated.get("id"), updated.get("username"))
+    resp = JSONResponse({"ok": True, "relogin_required": True})
+    SESSIONS.clear_cookie(resp)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @app.post("/api/account/password")
