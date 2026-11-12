@@ -291,6 +291,7 @@ def auth_status(request: Request):
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
         "sync_available": bool(u and SYNC_STORE.configured),
+        "password_change_available": bool(u and u.source == "postgres"),
         "activation_required": False,
         "user": ({"username": u.username, "role": u.role} if u else None),
     }
