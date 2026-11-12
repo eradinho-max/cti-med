@@ -98,6 +98,23 @@ jobs:
           assert s.authenticate("test-admin","Old-Test-Passphrase-123!") is None
           print("explicit migration fallback OK")
           PY
+      - name: Sync safety guards
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          js=Path("static/sync.js").read_text()
+          assert "location.reload()" not in js
+          assert "setInterval(" not in js
+          assert "addEventListener('focus'" not in js
+          assert "visibilitychange" not in js
+          assert "MAX_REQUEST_BYTES" in js and "MAX_KEY_CHARS" in js
+          assert "changedLocal&&changedRemote&&!same" in js
+          assert "cti_sync_meta_safe_v2" in js
+          backend=Path("sync_store.py").read_text()
+          assert "conn.autocommit=False" in backend
+          assert "FOR UPDATE" in backend
+          print("sync safety guards OK")
+          PY
       - name: PWA integrity
         run: |
           python - <<'PY'
