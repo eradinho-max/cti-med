@@ -98,6 +98,8 @@ jobs:
           assert s.authenticate("test-admin","Old-Test-Passphrase-123!") is None
           print("explicit migration fallback OK")
           PY
+      - name: Two-device sync regression (Node VM)
+        run: node tests/sync-regression.cjs
       - name: Sync safety guards
         run: |
           python - <<'PY'
