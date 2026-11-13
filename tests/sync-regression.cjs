@@ -13,7 +13,7 @@ async function backend(url,opts={}){
   requestCount++;
   if(url==='/api/auth/status')return response(200,{sync_available:true,password_change_available:false});
   if(unauthorized)return response(401,{detail:'Unauthorized'});
-  const ns=(url.split('namespace=')[1]||'progress').split('&')[0];
+  const ns=(opts.method==='PUT'?JSON.parse(opts.body).namespace:(url.split('namespace=')[1]||'progress').split('&')[0]);
   const st=store[ns];
   if(!st)return response(400,{detail:'bad namespace'});
   if((opts.method||'GET')==='GET')return response(200,{namespace:ns,version:st.version,data:structuredClone(st.data)});
