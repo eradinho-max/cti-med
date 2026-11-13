@@ -1,6 +1,7 @@
 (function(){
   'use strict';
-  const META_KEY='cti_sync_meta_v1';
+  // Sync manual, fail-safe. Nenhuma leitura massiva ou gravação é feita no boot.
+  const META_KEY='cti_sync_meta_safe_v2';
   const GROUPS={
     progress:[
       'medquest_historico','medquest_erros','medquest_horas','medquest_missao','medquest_planner','medquest_prova','medquest_semente',
@@ -13,157 +14,170 @@
       'cti_2fase','cti_doc_treinos','cti_simulados','cti_mini_estacao_hist_v2','cti_diagnostico_inicial_v31','cti_planner_exec'
     ]
   };
-  const STATE={busy:false,available:false,last:null,error:'',timer:null};
-
-  const getMeta=()=>{try{return JSON.parse(localStorage.getItem(META_KEY))||{namespaces:{}}}catch{return {namespaces:{}}}};
-  const saveMeta=m=>{try{localStorage.setItem(META_KEY,JSON.stringify(m))}catch{}};
-  const csrf=()=>decodeURIComponent(document.cookie.split('; ').find(x=>x.startsWith('cti_csrf='))?.split('=').slice(1).join('=')||'');
-  const raw=k=>localStorage.getItem(k);
-  const fnv=s=>{s=String(s??'∅');let h=2166136261;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0).toString(36)};
+  const STATE={busy:false,available:false,last:null,error:'',received:false};
+  const MAX_KEY_CHARS=350000;
+  const MAX_REQUEST_BYTES=800000;
+  const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
   const now=()=>Date.now();
+  const fnv=s=>{
+    s=String(s===null?'∅':s);
+    let h=2166136261;
+    for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}
+    return (h>>>0).toString(36);
+  };
+  const csrf=()=>decodeURIComponent(document.cookie.split('; ').find(x=>x.startsWith('cti_csrf='))?.split('=').slice(1).join('=')||'');
+  const getMeta=()=>{
+    try{
+      const m=JSON.parse(localStorage.getItem(META_KEY));
+      return m&&typeof m==='object'&&m.namespaces?m:{namespaces:{}};
+    }catch{return {namespaces:{}}}
+  };
+  const saveMeta=m=>localStorage.setItem(META_KEY,JSON.stringify(m));
 
   async function req(url,opt={}){
-    const cfg=Object.assign({credentials:'same-origin',cache:'no-store'},opt||{});
-    const r=await fetch(url,cfg);
-    const j=await r.json().catch(()=>({}));
-    if(r.status===401){location.replace('/?reason=session');throw new Error('Sessão expirada.')}
-    if(!r.ok){
-      const e=new Error(j.detail||j.message||'Falha na sincronização.');
-      e.status=r.status;e.payload=j;throw e;
-    }
-    return j;
-  }
-
-  function nsMeta(meta,ns){
-    meta.namespaces??={};
-    meta.namespaces[ns]??={version:0,initialized:false,seen:{},modified:{}};
-    return meta.namespaces[ns];
-  }
-  function capture(ns,mns,markChanges){
-    const items={};const ts=now();
-    for(const k of GROUPS[ns]){
-      const r=raw(k),h=fnv(r),seen=mns.seen?.[k];
-      let mod=Number(mns.modified?.[k]||0);
-      if(markChanges && seen!==undefined && h!==seen){mod=ts;mns.modified[k]=mod}
-      if(markChanges && seen===undefined && mns.initialized){mod=ts;mns.modified[k]=mod}
-      if(r!==null || (mns.initialized && seen!==undefined)) items[k]={raw:r,modified:mod||ts};
-    }
-    return items;
-  }
-  function applyItem(k,item,mns){
-    const before=raw(k),after=item?.raw==null?null:String(item.raw);
-    if(after===null){ if(before!==null)localStorage.removeItem(k); }
-    else if(before!==after)localStorage.setItem(k,after);
-    mns.seen[k]=fnv(after);
-    mns.modified[k]=Number(item?.modified||0);
-    return before!==after;
-  }
-  function refreshSeen(ns,mns){
-    for(const k of GROUPS[ns])mns.seen[k]=fnv(raw(k));
-  }
-  function normalizeData(d){return d&&typeof d==='object'&&d.items&&typeof d.items==='object'?d:{schema:1,items:{}}}
-
-  async function firstSync(ns,remote,meta){
-    const mns=nsMeta(meta,ns), server=normalizeData(remote.data);
-    let changedLocal=false,needPut=false;
-    if(Number(remote.version||0)===0){
-      const local=capture(ns,mns,false);
-      const items={};
-      for(const [k,v] of Object.entries(local)){items[k]={raw:v.raw,modified:now()}}
-      if(Object.keys(items).length){
-        const saved=await req('/api/sync/state',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
-          body:JSON.stringify({namespace:ns,base_version:0,data:{schema:1,items}})});
-        mns.version=saved.version;mns.modified=Object.fromEntries(Object.entries(items).map(([k,v])=>[k,v.modified]));
-      }else mns.version=0;
-    }else{
-      const local=capture(ns,mns,false),merged=JSON.parse(JSON.stringify(server));
-      for(const k of GROUPS[ns]){
-        const ri=server.items[k];
-        if(ri){
-          changedLocal=applyItem(k,ri,mns)||changedLocal;
-        }else if(local[k]?.raw!==null){
-          merged.items[k]={raw:local[k].raw,modified:now()};
-          mns.modified[k]=merged.items[k].modified;needPut=true;
-        }
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),15000);
+    try{
+      const cfg=Object.assign({credentials:'same-origin',cache:'no-store',signal:controller.signal},opt||{});
+      const response=await fetch(url,cfg);
+      const payload=await response.json().catch(()=>({}));
+      if(response.status===401)throw new Error('Sessão expirada. Entre novamente para sincronizar.');
+      if(!response.ok){
+        const e=new Error(typeof payload.detail==='string'&&payload.detail!=='SYNC_CONFLICT'
+          ?payload.detail:'Não foi possível sincronizar. Tente novamente.');
+        e.status=response.status;
+        throw e;
       }
-      if(needPut){
-        const saved=await req('/api/sync/state',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
-          body:JSON.stringify({namespace:ns,base_version:remote.version,data:merged})});
-        mns.version=saved.version;
-      }else mns.version=remote.version;
-    }
-    mns.initialized=true;refreshSeen(ns,mns);return changedLocal;
+      return payload;
+    }catch(e){
+      if(e.name==='AbortError')throw new Error('A sincronização demorou demais. Seus dados locais foram preservados.');
+      throw e;
+    }finally{clearTimeout(timeout)}
   }
 
-  function merge(ns,remote,mns){
-    const server=normalizeData(remote.data),merged=JSON.parse(JSON.stringify(server));
-    let changedLocal=false,changedServer=false;
-    const local=capture(ns,mns,true);
-    for(const k of GROUPS[ns]){
-      const li=local[k],ri=server.items[k];
-      const lm=Number(li?.modified||mns.modified?.[k]||0),rm=Number(ri?.modified||0);
-      if(ri && rm>lm){
-        changedLocal=applyItem(k,ri,mns)||changedLocal;
-      }else if(li && (!ri || lm>rm)){
-        merged.items[k]={raw:li.raw,modified:lm||now()};changedServer=true;
-      }else if(!li && ri){
-        changedLocal=applyItem(k,ri,mns)||changedLocal;
+  async function capture(ns){
+    const values={};
+    for(const key of GROUPS[ns]){
+      await pause(); // devolve a thread principal à interface entre as leituras
+      const value=localStorage.getItem(key);
+      if(value!==null&&value.length>MAX_KEY_CHARS){
+        throw new Error('Os dados de '+key+' excedem o limite seguro. Nada foi substituído.');
+      }
+      values[key]=value;
+    }
+    return values;
+  }
+
+  function normalized(remote){
+    const data=remote&&remote.data;
+    const items=data&&typeof data==='object'&&data.items&&typeof data.items==='object'?data.items:{};
+    return {schema:1,items:Object.assign({},items)};
+  }
+
+  function plan(ns,local,remote,previous){
+    const data=normalized(remote);
+    const received=[];
+    let changedServer=false;
+    const conflicts=[];
+    const initialized=!!previous.initialized;
+    if(initialized&&previous.version>0&&Number(remote.version||0)===0){
+      throw new Error('O estado remoto foi reiniciado. Nenhum dado local foi alterado.');
+    }
+    for(const key of GROUPS[ns]){
+      const localRaw=local[key];
+      const remoteItem=data.items[key];
+      const remoteRaw=remoteItem&&typeof remoteItem.raw==='string'?remoteItem.raw:null;
+      const same=localRaw===remoteRaw;
+      const base=previous.seen&&previous.seen[key];
+      let changedLocal,changedRemote;
+      if(!initialized||base===undefined){
+        changedLocal=localRaw!==null;
+        changedRemote=remoteRaw!==null;
+      }else{
+        changedLocal=fnv(localRaw)!==base;
+        changedRemote=fnv(remoteRaw)!==base;
+      }
+      if(changedLocal&&changedRemote&&!same){
+        conflicts.push(key);
+      }else if(changedLocal&&!same){
+        data.items[key]={raw:localRaw,modified:now()};
+        changedServer=true;
+      }else if(changedRemote&&!same){
+        received.push({key,raw:remoteRaw});
+      }else if(!same){
+        conflicts.push(key);
       }
     }
-    return {data:merged,changedLocal,changedServer};
+    if(conflicts.length){
+      throw new Error('Conflito em '+ns+' ('+conflicts.join(', ')+'). Nenhum dado foi sobrescrito. Use o dispositivo com o histórico mais completo.');
+    }
+    return {data,received,changedServer};
   }
 
-  async function syncNamespace(ns,meta,retry=true){
-    const mns=nsMeta(meta,ns);
+  async function syncNamespace(ns,meta){
     const remote=await req('/api/sync/state?namespace='+encodeURIComponent(ns));
-    if(!mns.initialized)return firstSync(ns,remote,meta);
-    mns.version=Number(remote.version||0);
-    const out=merge(ns,remote,mns);
-    if(out.changedServer){
-      try{
-        const saved=await req('/api/sync/state',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
-          body:JSON.stringify({namespace:ns,base_version:mns.version,data:out.data})});
-        mns.version=saved.version;
-      }catch(e){
-        if(e.status===409&&retry){
-          const cur=e.payload?.current||{};
-          const again=merge(ns,{version:cur.version||0,data:cur.data||{}},mns);
-          const saved=await req('/api/sync/state',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
-            body:JSON.stringify({namespace:ns,base_version:Number(cur.version||0),data:again.data})});
-          mns.version=saved.version;
-          out.changedLocal=again.changedLocal||out.changedLocal;
-        }else throw e;
+    const local=await capture(ns);
+    const previous=meta.namespaces[ns]||{initialized:false,version:0,seen:{}};
+    const p=plan(ns,local,remote,previous);
+    let version=Number(remote.version||0);
+    if(p.changedServer){
+      const body=JSON.stringify({namespace:ns,base_version:version,data:p.data});
+      if(new TextEncoder().encode(body).length>MAX_REQUEST_BYTES){
+        throw new Error('O volume de '+ns+' excede o limite seguro de envio. Nenhum dado local foi apagado.');
       }
+      const saved=await req('/api/sync/state',{
+        method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body
+      });
+      version=Number(saved.version);
     }
-    refreshSeen(ns,mns);return out.changedLocal;
+    // Aplicação só depois da confirmação do servidor e da validação de conflitos.
+    for(const item of p.received){
+      await pause();
+      if(item.raw===null)localStorage.removeItem(item.key);
+      else localStorage.setItem(item.key,item.raw);
+      local[item.key]=item.raw;
+    }
+    const seen={};
+    for(const key of GROUPS[ns]){
+      await pause();
+      seen[key]=fnv(local[key]);
+    }
+    meta.namespaces[ns]={initialized:true,version,seen};
+    saveMeta(meta);
+    return p.received.length>0;
   }
 
   async function syncAll(manual=false){
     if(STATE.busy||!STATE.available||!navigator.onLine)return false;
+    // Só executa mediante clique explícito; sem intervalos, focus ou reload.
     STATE.busy=true;STATE.error='';renderStatus();
-    let changed=false;const meta=getMeta();
+    let received=false;
+    const meta=getMeta();
     try{
-      for(const ns of Object.keys(GROUPS))changed=(await syncNamespace(ns,meta))||changed;
-      meta.lastSync=now();saveMeta(meta);STATE.last=meta.lastSync;STATE.error='';
-      renderStatus();
-      if(changed){
-        const flag=sessionStorage.getItem('cti_sync_reload_once');
-        if(!flag){sessionStorage.setItem('cti_sync_reload_once','1');location.reload();return true}
+      for(const ns of Object.keys(GROUPS)){
+        received=(await syncNamespace(ns,meta))||received;
       }
-      sessionStorage.removeItem('cti_sync_reload_once');
-      if(manual&&typeof window.toast==='function')window.toast('Sincronização concluída.');
+      meta.lastSync=now();
+      saveMeta(meta);
+      STATE.last=meta.lastSync;
+      STATE.received=received;
+      if(manual&&typeof window.toast==='function'){
+        window.toast(received?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.');
+      }
+      return true;
     }catch(e){
-      STATE.error=e.message||'Sincronização indisponível.';renderStatus();
+      STATE.error=e.message||'Sincronização indisponível.';
       if(manual&&typeof window.toast==='function')window.toast(STATE.error);
+      return false;
     }finally{STATE.busy=false;renderStatus()}
-    return changed;
   }
 
   function statusText(){
-    if(!STATE.available)return 'Aguardando ativação da conta persistente';
+    if(!STATE.available)return 'Sincronização ainda não disponível';
     if(!navigator.onLine)return 'Offline · alterações serão sincronizadas ao reconectar';
     if(STATE.busy)return 'Sincronizando…';
     if(STATE.error)return 'Sincronização pendente';
+    if(STATE.received)return 'Dados recebidos · atualize a página para visualizá-los';
     if(STATE.last)return 'Sincronizado · '+new Date(STATE.last).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     return 'Pronto para sincronizar';
   }
@@ -233,17 +247,16 @@
     try{
       const st=await req('/api/auth/status');
       STATE.available=!!st.sync_available;
-    }catch{STATE.available=false}
-    renderStatus();
-    if(STATE.available){
-      const meta=getMeta();STATE.last=meta.lastSync||null;
-      setTimeout(()=>syncAll(false),700);
-      STATE.timer=setInterval(()=>syncAll(false),15000);
-      window.addEventListener('focus',()=>syncAll(false));
-      window.addEventListener('online',()=>syncAll(false));
-      window.addEventListener('offline',renderStatus);
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncAll(false)});
+      if(!st.password_change_available){
+        const box=document.querySelector('.account-password-box');
+        if(box)box.innerHTML='<h3>Alteração de senha</h3><p class="small muted">A troca de senha dentro do CTI ainda não está disponível nesta modalidade de conta.</p>';
+      }
+    }catch(e){
+      STATE.available=false;
+      STATE.error='';
     }
+    renderStatus();
+    // Sem sincronização no carregamento, timers, focus, visibility ou reload.
   }
 
   window.CTI_SYNC={syncNow:()=>syncAll(true),status:()=>({available:STATE.available,last:STATE.last,error:STATE.error})};
