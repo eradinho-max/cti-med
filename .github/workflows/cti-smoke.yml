@@ -98,6 +98,39 @@ jobs:
           assert s.authenticate("test-admin","Old-Test-Passphrase-123!") is None
           print("explicit migration fallback OK")
           PY
+      - name: Authenticated admin regression with sync disabled
+        env:
+          CTI_REQUIRE_AUTH: "1"
+          CTI_ACCESS_USERNAME: "test-admin"
+          CTI_ACCESS_PASSWORD: "Not-A-Real-Credential-123"
+          CTI_SESSION_SECRET: "Not-A-Real-Session-Secret-456"
+          CTI_DATABASE_URL: "postgresql://unreachable-sync-only"
+          CTI_SYNC_ENABLED: "0"
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          import main
+          c=TestClient(main.app)
+          public=c.get("/")
+          assert public.status_code in (200,401), public.text
+          unauth=c.get("/api/auth/status")
+          assert unauth.status_code==200 and unauth.json()["configured"] is True
+          assert unauth.json()["sync_available"] is False
+          login=c.post("/api/auth/login",json={"username":"test-admin","password":"Not-A-Real-Credential-123"})
+          assert login.status_code==200, login.text
+          status=c.get("/api/auth/status")
+          assert status.status_code==200 and status.json()["authenticated"] is True, status.text
+          assert status.json()["sync_available"] is False
+          sec=c.get("/api/admin/security-status")
+          assert sec.status_code==200, sec.text
+          assert sec.json()["current_store"]=="environment-single-admin", sec.text
+          assert sec.json()["sync_enabled"] is False
+          assert c.get("/api/stats").status_code==200
+          sync=c.get("/api/sync/state?namespace=progress")
+          assert sync.status_code==503, sync.text
+          assert c.get("/api/admin/users/status").status_code==200
+          print("PASS authenticated session/admin while sync database is unavailable")
+          PY
       - name: Two-device sync regression (Node VM)
         run: node tests/sync-regression.cjs
       - name: Sync safety guards
