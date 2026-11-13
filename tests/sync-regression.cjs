@@ -53,14 +53,14 @@ async function browser(initial={}){
   listeners.DOMContentLoaded();
   // Boot só consulta auth/status e nunca toca nos dados nem dispara PUT.
   await new Promise(resolve=>setImmediate(resolve));
-  return {map,sync:context.window.CTI_SYNC.syncNow,reloads:()=>reloadCount};
+  return {map,sync:context.window.CTI_SYNC.syncNow,status:context.window.CTI_SYNC.status,reloads:()=>reloadCount};
 }
 (async()=>{
  const pc=await browser({'medquest_historico':'["q1"]','cti_study_notes_v32':'{"note":"PC"}'});
  let before=requestCount;
  assert.equal(Object.values(store).every(s=>s.version===0),true,'boot must not sync');
  assert.equal(requestCount-before,0,'boot must not trigger calls after it completes');
- assert.equal(await pc.sync(),true,'PC upload');
+ assert.equal(await pc.sync(),true,'PC upload: '+JSON.stringify(pc.status()));
  assert.equal(store.progress.version,1);
  assert.equal(store.study.version,1);
  assert.equal(store.progress.data.items.medquest_historico.raw,'["q1"]');
