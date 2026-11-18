@@ -61,7 +61,7 @@
   async function capture(ns){
     const values={};
     for(const key of GROUPS[ns]){
-      await pause(); // devolve a thread principal à interface entre as leituras
+      // Snapshot coerente: nenhuma resposta pode intercalar as leituras desta seção.
       const value=localStorage.getItem(key);
       if(value!==null&&value.length>MAX_KEY_CHARS){
         throw new Error('Os dados de '+key+' excedem o limite seguro. Nada foi substituído.');
