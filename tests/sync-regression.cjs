@@ -85,7 +85,28 @@ async function browser(initial={}){
  const prior=phone.map.get('medquest_historico');
  assert.equal(await phone.sync(),false,'conflict must fail');
  assert.equal(phone.map.get('medquest_historico'),prior,'local conflict must survive');
- assert.equal(store.progress.data.items.medquest_historico.raw,'["q1","q2","pc"]');
+ assert.equal(store.progress.data.items.medquest_historico.raw,'["q1","q2","pc"]');\n // A conta de origem salvou também preferências geradas automaticamente.\n store.progress.data.items.medquest_semente={raw:'"seed-pc"',modified:1};\n store.progress.data.items.cti_destaque={raw:JSON.stringify({data:'2026-11-18',id:111}),modified:1};
+
+ // Valores automáticos do celular não bloqueiam a primeira recuperação.
+ const fresh=await browser({
+   'medquest_semente':'"seed-phone"',
+   'cti_destaque':JSON.stringify({data:'2026-11-18',id:777})
+ });
+ assert.equal(await fresh.sync(),true,'first sync must recover generated keys');
+ assert.equal(fresh.map.get('medquest_historico'),store.progress.data.items.medquest_historico.raw);
+ assert.equal(fresh.map.get('medquest_semente'),store.progress.data.items.medquest_semente?.raw || '"seed-phone"');
+ const b=JSON.parse(fresh.map.get('cti_sync_bootstrap_backups_v1'));
+ assert.ok(b.some(x=>x.key==='medquest_semente') || !store.progress.data.items.medquest_semente);
+ assert.ok(b.some(x=>x.key==='cti_destaque') || !store.progress.data.items.cti_destaque);
+
+ // Quando há resposta na questão em destaque, não descartar trabalho local.
+ const unanswered=await browser({'medquest_semente':'"local-seed"'});
+ assert.equal(await unanswered.sync(),true,'seed alone should not block');
+ const seeded=await browser({'medquest_semente':'"another-seed"', 'cti_destaque':JSON.stringify({data:'2026-11-18',id:999,resp:{sel:'B'}})});
+ if(store.progress.data.items.cti_destaque?.raw){
+   assert.equal(await seeded.sync(),false,'answered spotlight must remain protected');
+   assert.ok(seeded.map.get('cti_destaque').includes('"resp"'));
+ }
 
  // Falha de banco não apaga armazenamento local.
  phone.map.set('cti_study_notes_v32','{"note":"offline"}');
