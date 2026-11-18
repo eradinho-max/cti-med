@@ -13,8 +13,7 @@ class SyncConflict(SyncStoreError):
 
 class SyncStore:
     def __init__(self) -> None:
-        self.url=(os.environ.get("CTI_SYNC_DATABASE_URL","").strip()
-                  or os.environ.get("CTI_DATABASE_URL","").strip())
+        self.url=os.environ.get("CTI_SYNC_DATABASE_URL","").strip()
 
     @property
     def configured(self)->bool:
