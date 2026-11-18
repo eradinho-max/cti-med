@@ -24,12 +24,16 @@ async function backend(url,opts={}){
   return response(200,{namespace:ns,version:st.version,data:structuredClone(st.data)});
 }
 function response(status,payload){return {status,ok:status>=200&&status<300,json:async()=>payload};}
-async function browser(initial={}){
+async function browser(initial={}, automatic=false){
   const map=new Map(Object.entries(initial));
   const listeners={};
-  let reloadCount=0;
+  let reloadCount=0, clock=1000000, timerId=0, canReceive=true;
+  const scheduled=new Map(), applied=[];
+  const fakeSet=(fn,ms=0)=>{if(ms===0)return setTimeout(fn,0);const id=++timerId;scheduled.set(id,{fn,due:clock+ms});return id;};
+  const fakeClear=id=>{if(typeof id==='number')scheduled.delete(id);else clearTimeout(id);};
+  class Clock extends Date {static now(){return clock;}}
   const document={
-    readyState:'loading',cookie:'cti_csrf=dummy',
+    readyState:'loading',cookie:'cti_csrf=dummy',hidden:false,
     getElementById:(id)=>id==='ctiAccountDialog'?{}:null,
     querySelectorAll:()=>[],querySelector:()=>null,
     addEventListener:(type,cb)=>listeners[type]=cb
@@ -40,12 +44,12 @@ async function browser(initial={}){
     removeItem:(key)=>map.delete(key)
   };
   const context={
-    document,localStorage,window:{},
+    document,localStorage,window:{addEventListener:(type,cb)=>listeners[type]=cb,CTI_SYNC_VIEW:{canReceive:()=>canReceive,apply:keys=>applied.push(...keys)}},
     navigator:{onLine:true},TextEncoder,
-    setTimeout,clearTimeout,
-    fetch:backend,AbortController,
+    setTimeout:automatic?fakeSet:setTimeout,clearTimeout:automatic?fakeClear:clearTimeout,
+    fetch:async(url,opts)=>url==='/api/auth/status'&&automatic?response(200,{sync_available:true,sync_auto_available:true,password_change_available:false}):backend(url,opts),AbortController,
     location:{reload:()=>reloadCount++,replace:()=>reloadCount++},
-    Date,JSON,Object,String,Number,Math,Error,Promise,console
+    Date:automatic?Clock:Date,JSON,Object,String,Number,Math,Error,Promise,console
   };
   context.window.window=context.window;
   vm.runInNewContext(script,context,{filename:'sync.js'});
@@ -53,7 +57,12 @@ async function browser(initial={}){
   listeners.DOMContentLoaded();
   // Boot só consulta auth/status e nunca toca nos dados nem dispara PUT.
   await new Promise(resolve=>setImmediate(resolve));
-  return {map,sync:context.window.CTI_SYNC.syncNow,status:context.window.CTI_SYNC.status,reloads:()=>reloadCount};
+  return {map,sync:context.window.CTI_SYNC.syncNow,status:context.window.CTI_SYNC.status,reloads:()=>reloadCount,applied,
+    setSafe:v=>canReceive=v,
+    setOnline:v=>{context.navigator.onLine=v;listeners[v?'online':'offline']?.()},
+    scheduled:()=>scheduled.size,
+    cycle:async()=>{const next=[...scheduled.entries()].sort((a,b)=>a[1].due-b[1].due)[0];assert.ok(next,'automatic timer expected');scheduled.delete(next[0]);clock=next[1].due;await next[1].fn();}
+  };
 }
 (async()=>{
  const pc=await browser({'medquest_historico':'["q1"]','cti_study_notes_v32':'{"note":"PC"}'});
@@ -148,5 +157,40 @@ async function browser(initial={}){
  assert.equal(await large.sync(),false);
  assert.equal(store.progress.version,saved);
  assert.equal(large.reloads(),0);
- console.log('PASS: boot inert, PC->phone, phone->PC, reopened browser, new device, updates, conflicts, DB failures, 401, bounds, no reload');
+ // Automatic mode uses independent simulated timers, without manual sync calls.
+ for(const ns of Object.keys(store))store[ns]={version:0,data:{}};
+ const autoPc=await browser({'medquest_historico':'["auto1"]','cti_cera_v1':'{"version":1,"topics":{}}'},true);
+ assert.equal(autoPc.status().automatic,true);
+ assert.equal(autoPc.scheduled(),1,'one scheduled cycle only');
+ await autoPc.cycle();
+ assert.equal(store.progress.data.items.medquest_historico.raw,'["auto1"]');
+ const autoPhone=await browser({},true);
+ await autoPhone.cycle();
+ assert.equal(autoPhone.map.get('medquest_historico'),'["auto1"]');
+ assert.ok(autoPhone.applied.includes('cti_cera_v1'));
+ autoPhone.map.set('medquest_historico','["auto1","phone"]');
+ await autoPhone.cycle();
+ autoPc.setSafe(false);
+ await autoPc.cycle();
+ assert.equal(autoPc.map.get('medquest_historico'),'["auto1"]','do not mutate active view');
+ assert.equal(autoPc.status().deferred,true);
+ autoPc.setSafe(true);
+ await autoPc.cycle();
+ assert.equal(autoPc.map.get('medquest_historico'),'["auto1","phone"]');
+ assert.equal(autoPc.status().deferred,false);
+ autoPhone.setOnline(false);
+ assert.equal(autoPhone.scheduled(),0);
+ autoPhone.map.set('cti_study_notes_v32','{"note":"offline"}');
+ autoPhone.setOnline(true);
+ assert.equal(autoPhone.scheduled(),1);
+ await autoPhone.cycle();
+ assert.equal(store.study.data.items.cti_study_notes_v32.raw,'{"note":"offline"}');
+ await autoPc.cycle();
+ assert.equal(autoPc.map.get('cti_study_notes_v32'),'{"note":"offline"}');
+ unauthorized=true;
+ await autoPc.cycle();
+ assert.equal(autoPc.scheduled(),0,'401 must stop automatic retry');
+ assert.equal(autoPc.reloads(),0);
+ unauthorized=false;
+ console.log('PASS manual and automatic: two-way, deferred receive, offline reconnect, CERA, auth failure, no reload');
 })().catch(err=>{console.error(err);process.exitCode=1});
