@@ -133,7 +133,7 @@
         changedLocal=fnv(localRaw)!==base;
         changedRemote=fnv(remoteRaw)!==base;
       }
-      if(!initialized&&changedLocal&&changedRemote&&!same
+      if((!initialized||base===undefined)&&changedLocal&&changedRemote&&!same
         &&bootstrapGeneratedKey(ns,key,localRaw,remoteRaw)){
         received.push({key,raw:remoteRaw,backupRaw:localRaw});
       }else if(changedLocal&&changedRemote&&!same){
@@ -173,6 +173,13 @@
     }
     // Após a rede, confirme novamente que a tela e o snapshot são seguros.
     if(p.received.length&&(!canReceive()||p.received.some(item=>localStorage.getItem(item.key)!==local[item.key]))){
+      // If PUT succeeded, advance only the confirmed keys; pending downloads keep their old baseline.
+      if(p.changedServer){
+        const pending=new Set(p.received.map(item=>item.key));
+        const seen=Object.assign({},previous.seen||{});
+        for(const key of GROUPS[ns])if(!pending.has(key))seen[key]=fnv(local[key]);
+        meta.namespaces[ns]={initialized:true,version,seen};saveMeta(meta);
+      }
       return {deferred:true,received:false};
     }
     // Atualização local e memória no mesmo turno; não ceder entre registros recebidos.
