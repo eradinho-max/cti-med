@@ -19,7 +19,7 @@
   const history=()=>typeof HIST!=='undefined'&&Array.isArray(HIST)?HIST:[];
   const current=()=>db.topics[key(state.area,state.theme)]||null;
   function persist(){
-    try{localStorage.setItem(KEY,JSON.stringify(db));return true}
+    try{const raw=JSON.stringify(db),previous=localStorage.getItem(KEY);localStorage.setItem(KEY,raw);if(previous!==raw)window.CTI_SYNC?.notifyChange?.(KEY);return true}
     catch{alert('Não foi possível salvar o CERA neste dispositivo. Verifique o espaço disponível.');return false}
   }
   function topics(){
