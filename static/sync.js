@@ -74,6 +74,39 @@
     return {schema:1,items:Object.assign({},items)};
   }
 
+  // Valores criados automaticamente no primeiro acesso não devem bloquear
+  // a recuperação do progresso já salvo na conta.
+  function bootstrapGeneratedKey(ns,key,localRaw,remoteRaw){
+    if(ns!=='progress'||localRaw===null||remoteRaw===null)return false;
+    if(key==='medquest_semente')return true; // semente aleatória, não é resposta do aluno
+    if(key!=='cti_destaque')return false;
+    try{
+      const local=JSON.parse(localRaw),remote=JSON.parse(remoteRaw);
+      // Nunca descartar resposta efetivamente marcada no dispositivo.
+      return !!(local&&remote&&typeof local==='object'&&typeof remote==='object'
+        &&!local.resp&&local.id&&remote.id&&local.data&&remote.data);
+    }catch{return false}
+  }
+
+  function backupBootstrapValues(ns,received){
+    const changed=received.filter(item=>item.backupRaw!==undefined);
+    if(!changed.length)return;
+    const key='cti_sync_bootstrap_backups_v1';
+    let prior=[];
+    try{
+      const saved=localStorage.getItem(key);
+      if(saved!==null){
+        prior=JSON.parse(saved);
+        if(!Array.isArray(prior))throw new Error('Backup inválido');
+      }
+      const time=now();
+      const added=changed.map(item=>({namespace:ns,key:item.key,raw:item.backupRaw,savedAt:time}));
+      localStorage.setItem(key,JSON.stringify(prior.concat(added).slice(-20)));
+    }catch{
+      throw new Error('Não foi possível preservar a cópia local antes da sincronização. Nenhum dado foi substituído.');
+    }
+  }
+
   function plan(ns,local,remote,previous){
     const data=normalized(remote);
     const received=[];
@@ -97,7 +130,10 @@
         changedLocal=fnv(localRaw)!==base;
         changedRemote=fnv(remoteRaw)!==base;
       }
-      if(changedLocal&&changedRemote&&!same){
+      if(!initialized&&changedLocal&&changedRemote&&!same
+        &&bootstrapGeneratedKey(ns,key,localRaw,remoteRaw)){
+        received.push({key,raw:remoteRaw,backupRaw:localRaw});
+      }else if(changedLocal&&changedRemote&&!same){
         conflicts.push(key);
       }else if(changedLocal&&!same){
         data.items[key]={raw:localRaw,modified:now()};
@@ -119,6 +155,7 @@
     const local=await capture(ns);
     const previous=meta.namespaces[ns]||{initialized:false,version:0,seen:{}};
     const p=plan(ns,local,remote,previous);
+    backupBootstrapValues(ns,p.received);
     let version=Number(remote.version||0);
     if(p.changedServer){
       const body=JSON.stringify({namespace:ns,base_version:version,data:p.data});
