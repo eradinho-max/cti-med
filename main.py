@@ -1242,6 +1242,12 @@ def service_worker():
                         headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
 
 
+@app.get("/static/manifest.json", include_in_schema=False)
+def web_manifest():
+    return FileResponse(os.path.join(STATIC, "manifest.json"), media_type="application/manifest+json",
+                        headers={"Cache-Control": "no-cache"})
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 

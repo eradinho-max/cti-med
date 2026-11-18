@@ -7,7 +7,7 @@ const hoje = () => new Date().toLocaleDateString('sv-SE');
 const addDias = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('sv-SE'); };
 const fmtData = iso => new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'short', day:'2-digit', month:'2-digit'});
 const pct = (a, n) => n ? Math.round(100 * a / n) : 0;
-const ls = { get:(k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set:(k, v) => localStorage.setItem(k, JSON.stringify(v)) };
+const ls = { get:(k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }, set:(k, v) => { const raw=JSON.stringify(v), previous=localStorage.getItem(k); localStorage.setItem(k,raw); if(previous!==raw)window.CTI_SYNC?.notifyChange?.(k); } };
 let IAC = ls.get('cti_ia_cache_v24', {});
 let MINIC = ls.get('cti_mini_estacoes_v28', {});
 let MINI_SESS = {};
@@ -273,8 +273,9 @@ async function init(){
   atualizarHeader();
   renderMissao();
   renderPainel();
+  window.CTI_SYNC?.onDashboard?.();
   document.addEventListener('keydown', teclas);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => { if (r.scope.endsWith('/static/')) r.unregister(); })).catch(() => {}); navigator.serviceWorker.register('/sw.js', {scope:'/'}).catch(() => {});
+  // PWA registration is shared with the login page in static/pwa.js.
 }
 
 function opcoes(sel, valores, todos = 'Todas', rotulo = v => v){ sel.innerHTML = (todos ? `<option value="">${todos}</option>` : '') + valores.map(v => `<option value="${esc(v)}">${esc(rotulo(v))}</option>`).join(''); }

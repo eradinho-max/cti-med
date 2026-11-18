@@ -15,8 +15,9 @@
     ]
   };
   const STATE={busy:false,available:false,automatic:false,last:null,error:'',received:false,deferred:false};
-  let autoTimer=null, lastAttempt=0, autoPaused=false;
-  const AUTO_MIN=30000, AUTO_NEXT=45000, AUTO_RETRY=120000;
+  let autoTimer=null, autoDue=0, lastAttempt=0, autoPaused=false, retryAfter=0, queuedDelay=null;
+  const AUTO_MIN=5000, AUTO_NEXT=15000, AUTO_RETRY=120000, AUTO_WRITE=1000;
+  const SYNC_KEYS=new Set(Object.values(GROUPS).flat());
   const canReceive=()=>!STATE.automatic||window.CTI_SYNC_VIEW?.canReceive?.()===true;
   const MAX_KEY_CHARS=350000;
   const MAX_REQUEST_BYTES=800000;
@@ -199,22 +200,32 @@
     return {received:p.received.length>0,deferred:false};
   }
 
+  function cancelAuto(){
+    if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;autoDue=0;}
+  }
   function scheduleAuto(delay=AUTO_NEXT){
-    if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}
-    if(!STATE.automatic||!STATE.available||autoPaused||!navigator.onLine||document.hidden)return;
-    const wait=Math.max(delay,AUTO_MIN-(now()-lastAttempt),0);
+    if(!STATE.automatic||!STATE.available||autoPaused||!navigator.onLine||document.hidden){cancelAuto();return;}
+    if(STATE.busy){queuedDelay=queuedDelay===null?delay:Math.min(queuedDelay,delay);return;}
+    const wait=Math.max(delay,AUTO_MIN-(now()-lastAttempt),retryAfter-now(),0);
+    const due=now()+wait;
+    // A later notification must never postpone an already scheduled upload.
+    if(autoTimer!==null&&autoDue<=due)return;
+    cancelAuto();autoDue=due;
     autoTimer=setTimeout(async()=>{
-      autoTimer=null;
+      autoTimer=null;autoDue=0;
       if(!STATE.automatic||autoPaused||document.hidden||!navigator.onLine)return;
-      if(STATE.busy){scheduleAuto(AUTO_NEXT);return;}
+      if(STATE.busy){scheduleAuto(AUTO_WRITE);return;}
       await syncAll(false);
     },wait);
+  }
+  function notifyChange(key){
+    if(SYNC_KEYS.has(key))scheduleAuto(AUTO_WRITE);
   }
 
   async function syncAll(manual=false){
     if(STATE.busy||!STATE.available||!navigator.onLine)return false;
     // Uma execução por aba; sem reload e com intervalo mínimo automático.
-    if(manual){autoPaused=false;if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}}
+    if(manual){autoPaused=false;retryAfter=0;cancelAuto();}
     lastAttempt=now();
     STATE.busy=true;STATE.error='';STATE.deferred=false;renderStatus();
     let received=false;
@@ -227,16 +238,22 @@
       }
       if(!STATE.deferred){meta.lastSync=now();saveMeta(meta);STATE.last=meta.lastSync;}
       STATE.received=received&&!STATE.automatic;
+      retryAfter=0;
       if(manual&&typeof window.toast==='function'){
         window.toast(STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.');
       }
       return true;
     }catch(e){
       STATE.error=e.message||'Sincronização indisponível.';
+      retryAfter=now()+AUTO_RETRY;
       if(e.status===401||/^Conflito em |^O estado remoto foi reiniciado/.test(STATE.error))autoPaused=true;
       if(manual&&typeof window.toast==='function')window.toast(STATE.error);
       return false;
-    }finally{STATE.busy=false;renderStatus();scheduleAuto(STATE.error?AUTO_RETRY:AUTO_NEXT)}
+    }finally{
+      STATE.busy=false;renderStatus();
+      const delay=queuedDelay;queuedDelay=null;
+      scheduleAuto(STATE.error?AUTO_RETRY:delay===null?AUTO_NEXT:delay);
+    }
   }
 
   function statusText(){
@@ -330,12 +347,15 @@
     renderStatus();
     if(STATE.automatic){
       window.addEventListener('online',()=>{renderStatus();scheduleAuto(1000)});
-      window.addEventListener('offline',()=>{if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}renderStatus()});
-      document.addEventListener('visibilitychange',()=>scheduleAuto(document.hidden?AUTO_NEXT:1000));
-      scheduleAuto(2000);
+      window.addEventListener('offline',()=>{cancelAuto();renderStatus()});
+      const wake=()=>{renderStatus();scheduleAuto(AUTO_WRITE)};
+      window.addEventListener('pageshow',wake);
+      window.addEventListener('focus',wake);
+      document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAuto();else wake()});
+      scheduleAuto(AUTO_WRITE);
     }
   }
 
-  window.CTI_SYNC={syncNow:()=>syncAll(true),status:()=>({available:STATE.available,automatic:STATE.automatic,last:STATE.last,error:STATE.error,deferred:STATE.deferred}),onDashboard:()=>{if(STATE.deferred)scheduleAuto(1000)}};
+  window.CTI_SYNC={syncNow:()=>syncAll(true),status:()=>({available:STATE.available,automatic:STATE.automatic,last:STATE.last,error:STATE.error,deferred:STATE.deferred}),onDashboard:()=>scheduleAuto(AUTO_WRITE),notifyChange};
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
 })();

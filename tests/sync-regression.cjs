@@ -61,6 +61,11 @@ async function browser(initial={}, automatic=false){
     setSafe:v=>canReceive=v,
     setOnline:v=>{context.navigator.onLine=v;listeners[v?'online':'offline']?.()},
     scheduled:()=>scheduled.size,
+    nextDelay:()=>Math.min(...[...scheduled.values()].map(t=>t.due-clock)),
+    notify:key=>context.window.CTI_SYNC.notifyChange(key),
+    wake:()=>listeners.pageshow?.(),
+    hide:()=>{document.hidden=true;listeners.visibilitychange?.()},
+    show:()=>{document.hidden=false;listeners.visibilitychange?.()},
     cycle:async()=>{const next=[...scheduled.entries()].sort((a,b)=>a[1].due-b[1].due)[0];assert.ok(next,'automatic timer expected');scheduled.delete(next[0]);clock=next[1].due;await next[1].fn();}
   };
 }
@@ -169,7 +174,16 @@ async function browser(initial={}, automatic=false){
  assert.equal(autoPhone.map.get('medquest_historico'),'["auto1"]');
  assert.ok(autoPhone.applied.includes('cti_cera_v1'));
  autoPhone.map.set('medquest_historico','["auto1","phone"]');
+ autoPhone.notify('medquest_historico');
+ assert.ok(autoPhone.nextDelay()<=5000,'new answer must accelerate the upload');
+ autoPhone.notify('medquest_historico');
+ assert.equal(autoPhone.scheduled(),1,'writes must not create duplicate timers');
  await autoPhone.cycle();
+ autoPc.hide();
+ assert.equal(autoPc.scheduled(),0,'hidden mobile tab must suspend polling');
+ autoPc.show();autoPc.wake();
+ assert.ok(autoPc.nextDelay()<=5000,'return to application must accelerate recovery');
+ assert.equal(autoPc.scheduled(),1);
  autoPc.setSafe(false);
  await autoPc.cycle();
  assert.equal(autoPc.map.get('medquest_historico'),'["auto1"]','do not mutate active view');
