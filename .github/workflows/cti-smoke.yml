@@ -190,8 +190,9 @@ jobs:
           js=Path("static/sync.js").read_text()
           assert "location.reload()" not in js
           assert "setInterval(" not in js
-          assert "addEventListener('focus'" not in js
-          assert "visibilitychange" in js and "AUTO_MIN=30000" in js and "AUTO_RETRY=120000" in js
+          assert "addEventListener('pageshow'" in js and "visibilitychange" in js
+          assert "AUTO_MIN=5000" in js and "AUTO_RETRY=120000" in js
+          assert "notifyChange" in js and "autoDue<=due" in js
           assert "sync_auto_available===true" in js and "autoPaused" in js
           assert "MAX_REQUEST_BYTES" in js and "MAX_KEY_CHARS" in js
           assert "changedLocal&&changedRemote&&!same" in js
