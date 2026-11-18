@@ -214,6 +214,7 @@ function configurarAcessoAdmin(){
 
 /* ============================================================ inicialização */
 async function init(){
+  const logoutReturnedActive = new URLSearchParams(location.search).get('reason') === 'logout';
   history.replaceState(estadoRota('painel'), '', '#painel');
   NAV_READY = true;
   window.addEventListener('popstate', aoVoltarDoSistema);
@@ -231,18 +232,23 @@ async function init(){
     d.addEventListener('close', () => d.remove(), {once:true});
     d.addEventListener('cancel', e => { if (logoutBusy) e.preventDefault(); });
     cancel.onclick = () => d.close();
-    ok.onclick = async () => {
+    ok.onclick = () => {
       if (logoutBusy) return;
-      logoutBusy = true; ok.disabled = cancel.disabled = true; status.textContent = 'Encerrando sessão…';
+      if (!navigator.onLine) { status.textContent = 'Sem conexão. Seu progresso permanece salvo neste dispositivo.'; return; }
       try {
-        const response = await api('/api/auth/logout', {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':decodeURIComponent(cookieVal('cti_csrf'))},body:'{}',timeoutMs:8000});
-        if (!response?.ok) throw new Error('O servidor não confirmou a saída.');
-        const state = await api('/api/auth/status', {timeoutMs:8000});
-        if (state.required && state.authenticated) throw new Error('A sessão continua ativa. Tente novamente.');
+        const csrf = decodeURIComponent(cookieVal('cti_csrf'));
+        if (!csrf) throw new Error('Token de sessão ausente.');
+        logoutBusy = true; ok.disabled = cancel.disabled = true; status.textContent = 'Encerrando sessão…';
+        // Use a top-level POST, rather than fetch + a second cookie-dependent request.
+        const form = document.createElement('form');
+        form.method = 'POST'; form.action = '/api/auth/logout-page'; form.hidden = true;
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = 'csrf'; input.value = csrf;
+        form.appendChild(input); document.body.appendChild(form);
         try { navigator.serviceWorker?.controller?.postMessage({type:'CLEAR_PRIVATE'}); } catch {}
-        location.replace('/?reason=logout');
+        form.submit();
       } catch (e) {
-        status.textContent = 'Não foi possível confirmar a saída. Verifique a conexão e tente novamente. Seu progresso foi preservado.';
+        status.textContent = 'Não foi possível iniciar a saída. Atualize a página e tente novamente. Seu progresso foi preservado.';
         logoutBusy = false; ok.disabled = cancel.disabled = false;
       }
     };
@@ -258,6 +264,7 @@ async function init(){
   $('#btnPerfil').onclick = editarPerfil; $('#shPerfil').onclick = () => { $('#sheet').classList.remove('on'); editarPerfil(); };
   aplicarPerfil();
   AUTH_STATUS = await api('/api/auth/status');
+  if (logoutReturnedActive && AUTH_STATUS.required && AUTH_STATUS.authenticated) toast('O navegador manteve a sessão ativa. Nenhum progresso foi apagado.');
   configurarAcessoAdmin();
   initAdminUI();
   [STATS, INDICE] = await Promise.all([api('/api/stats'), api('/api/indice')]);
