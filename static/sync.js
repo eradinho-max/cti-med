@@ -7,7 +7,7 @@
       'cti_exam_focus_v29','cti_favoritos','cti_metas','cti_perfil','cti_destaque','medquest_theme'
     ],
     study:[
-      'cti_study_flashcards_v32','cti_study_highlights_v32','cti_study_notes_v32','cti_material_estudo_v1','cti_flashcards_erros_v31'
+      'cti_study_flashcards_v32','cti_study_highlights_v32','cti_study_notes_v32','cti_material_estudo_v1','cti_flashcards_erros_v31','cti_cera_v1'
     ],
     training:[
       'cti_2fase','cti_doc_treinos','cti_simulados','cti_mini_estacao_hist_v2','cti_diagnostico_inicial_v31','cti_planner_exec'
