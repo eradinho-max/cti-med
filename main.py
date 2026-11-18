@@ -45,6 +45,7 @@ EXAMES_OCULTOS = {e.strip() for e in os.environ.get("CTI_OCULTAR_EXAMES", "").sp
 SESSIONS = SessionManager(PROD)
 SYNC_STORE = SyncStore()
 SYNC_ENABLED = os.environ.get("CTI_SYNC_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
+SYNC_AUTO_ENABLED = os.environ.get("CTI_SYNC_AUTO_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on")
 
 app = FastAPI(title="CTi – Centro de Treinamento Intensivo",
               docs_url=None if PROD else "/docs", redoc_url=None, openapi_url=None if PROD else "/openapi.json")
@@ -305,6 +306,7 @@ def auth_status(request: Request):
         "authenticated": bool(u) or not AUTH_REQUIRED,
         "recovery_available": bool(SESSIONS.recovery_available) if AUTH_REQUIRED else False,
         "sync_available": bool(u and SYNC_ENABLED and SYNC_STORE.configured),
+        "sync_auto_available": bool(u and SYNC_ENABLED and SYNC_AUTO_ENABLED and SYNC_STORE.configured),
         "password_change_available": bool(u and u.source == "postgres"),
         "activation_required": False,
         "user": ({"username": u.username, "role": u.role} if u else None),
