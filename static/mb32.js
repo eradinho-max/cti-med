@@ -2,7 +2,7 @@
   const K={h:'cti_study_highlights_v32',n:'cti_study_notes_v32',f:'cti_study_flashcards_v32'};
   const state={area:'',search:'',sort:'priority',nType:'all',nSearch:'',current:null};
   const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
-  const set=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch{}};
+  const set=(k,v)=>{try{const raw=JSON.stringify(v),previous=localStorage.getItem(k);localStorage.setItem(k,raw);if(previous!==raw)window.CTI_SYNC?.notifyChange?.(k)}catch{}};
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const today=()=>new Date().toLocaleDateString('sv-SE');
   const add=(iso,n)=>{const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.toLocaleDateString('sv-SE')};
