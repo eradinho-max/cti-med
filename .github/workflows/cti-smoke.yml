@@ -36,6 +36,7 @@ jobs:
           node --check static/mb32.js
           node --check static/mb33.js
           node --check static/cera.js
+          node tools/test_cera_suggestions.cjs
           node --check static/kotu.js
           node --check static/sync.js
           node --check static/sw.js
