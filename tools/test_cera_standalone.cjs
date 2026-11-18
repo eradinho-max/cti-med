@@ -17,7 +17,7 @@ assert.ok(core.includes("if (v === 'cera') window.CTI_CERA?.refresh?.()"),'CERA 
 assert.ok(core.includes("if (destino === 'cera') mostrar('cera', {substituir:true})"),'Quiz exit must return to CERA');
 assert.ok(core.includes("window.treinarArea = (area, tema, returnTo = '')"),'Question trainer must accept CERA return destination');
 assert.ok(cera.includes("window.treinarArea(rec.area,rec.theme,'cera')"),'CERA must set quiz return destination');
-assert.ok(cera.includes("window.CTI_CERA={open,refresh:render,summary:()=>stats()}"),'Module must expose navigation refresh');
+assert.ok(cera.includes("window.CTI_CERA={open,refresh:render,summary:()=>stats(),reloadFromStorage:"),'Module must expose navigation refresh and storage reload');
 assert.ok(!cera.includes("insertAdjacentElement('afterend',b)"),'Must not dynamically duplicate menus');
 assert.ok(!cera.includes("anchor.parentNode.insertBefore(section,anchor)"),'Must not inject CERA into Trilhas');
 assert.ok(css.includes('#view-cera .cera-guide-grid'),'Guide must have responsive styles');
