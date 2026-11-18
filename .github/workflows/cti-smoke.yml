@@ -55,7 +55,9 @@ jobs:
           assert s.authenticate("admin","Password-123!")
           from sync_store import SyncStore
           sync=SyncStore()
-          assert sync.configured is True
+          assert sync.configured is False
+          os.environ["CTI_SYNC_DATABASE_URL"]="postgresql://sync-only"
+          assert SyncStore().configured is True
           print("auth/sync decoupling OK")
           PY
       - name: Explicit account migration logic
