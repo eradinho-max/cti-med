@@ -7,7 +7,7 @@
   const state={material:null,source:null,tab:'sheet',busy:false};
 
   const get=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}};
-  const set=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true}catch{return false}};
+  const set=(k,v)=>{try{const raw=JSON.stringify(v),previous=localStorage.getItem(k);localStorage.setItem(k,raw);if(previous!==raw)window.CTI_SYNC?.notifyChange?.(k);return true}catch{return false}};
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const csrf=()=>decodeURIComponent(document.cookie.split('; ').find(x=>x.startsWith('cti_csrf='))?.split('=').slice(1).join('=')||'');
   const today=()=>new Date().toLocaleDateString('sv-SE');
