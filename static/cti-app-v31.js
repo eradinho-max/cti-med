@@ -175,6 +175,7 @@ function registrarRota(v, substituir=false){
   else history.pushState(estadoRota(v), '', hash);
 }
 function confirmarSaidaProva(){
+  if(S?._enviando)return false;
   return !(S && S.modo === 'prova' && !S.finalizado && Object.keys(S.selecao || {}).length) ||
     confirm('Sair do simulado? As respostas não serão corrigidas.');
 }
@@ -306,6 +307,8 @@ function mostrar(v, opts = {}){
   if (!ROTAS.has(v)) v = 'painel';
   if (v === 'admin' && AUTH_STATUS?.user?.role !== 'admin') v = 'painel';
   const atualAntes = viewAtual();
+  if(atualAntes==='quiz'&&v!=='quiz'&&S?._enviando)return;
+  if(atualAntes==='quiz'&&v!=='quiz'&&S?.tempos)simTempoAtivo(S,null,Math.min(Date.now(),S.deadline||Infinity));
   if (!opts.semHistorico && atualAntes === 'segunda' && v !== 'segunda' && typeof F2S !== 'undefined' && F2S.est && F2S.fase === 'estacao'){
     if (!confirm('Sair da estação sem avaliar?')) return;
     clearInterval(F2S.h); F2S.est = null; F2S.fase = '';
@@ -319,6 +322,7 @@ function mostrar(v, opts = {}){
   if (v === 'erros') renderErros();
   if (v === 'banco' && !$('#bLista').children.length && STATS) buscarBanco(true);
   if (v === 'desempenho') renderDesempenho();
+  if (v === 'simulado') renderHistoricoSimulados();
   if (v === 'reforco') renderReforco();
   if (v === 'cera') window.CTI_CERA?.refresh?.();
   if (v === 'segunda') renderFase2();
@@ -468,7 +472,34 @@ $('#mExtra').onclick = async () => {
 $('#mIrErros').onclick = () => { mostrar('erros'); };
 
 /* ============================================================ SIMULADO */
-const SIM_SEG_POR_QUESTAO = 180; // 3 min/questão: 100 questões = 5 horas
+const SIM_SEG_POR_QUESTAO = 180; // padrão: 100 questões = 5 horas
+const SIM_TEMPOS = [60,90,120,150,180,240,300];
+function simTempoEscolhido(value){const n=Number(value);return SIM_TEMPOS.includes(n)?n:SIM_SEG_POR_QUESTAO;}
+function simTempoAtivo(s,key,now){
+  if(!s||!s.tempos)return;
+  if(s.tempoAtivo!=null&&s.tempoAtivo!==key){
+    const dt=Math.max(0,now-s.tempoInicio);
+    s.tempos[s.tempoAtivo]=(s.tempos[s.tempoAtivo]||0)+dt;
+    s.tempoAtivo=null;
+  }
+  if(key!=null&&s.tempoAtivo===null){s.tempoAtivo=key;s.tempoInicio=now;}
+}
+function simRelatorio(s){
+  const rows=s.questoes.map((q,i)=>{
+    const r=s.respostas[q.id], marcado=!!r?.sel;
+    return {i:i+1,seg:Math.round((s.tempos?.[q.id]||0)/1000),marcado,ac:marcado&&!!r.acertou};
+  });
+  const medio=a=>a.length?Math.round(a.reduce((n,x)=>n+x.seg,0)/a.length):null;
+  const marcadas=rows.filter(x=>x.marcado),certas=marcadas.filter(x=>x.ac),erradas=marcadas.filter(x=>!x.ac);
+  return {media:medio(marcadas),mediaCertas:medio(certas),mediaErradas:medio(erradas),ac:certas.length,respondidas:marcadas.length,brancas:rows.length-marcadas.length,lentas:rows.filter(x=>x.seg>s.tempoPorQuestaoSec).sort((a,b)=>b.seg-a.seg)};
+}
+function simMedida(n){return n==null?'—':fmtCrono(n);}
+function simRelatorioHtml(rel,s){return '<div class="sim-result-time"><b>Análise temporal</b><div class="grid g3" style="margin-top:10px">'+[['Média ativa / questão marcada',rel.media],['Média dos acertos',rel.mediaCertas],['Média dos erros',rel.mediaErradas]].map(([label,v])=>'<div class="kpi"><span class="small">'+label+'</span><b>'+simMedida(v)+'</b></div>').join('')+'</div><p class="small muted">Tempo ativo exclui períodos com o aplicativo oculto. O prazo da prova continua correndo.</p><p class="small">Alvo: '+fmtCrono(s.tempoPorQuestaoSec)+' por questão · '+rel.lentas.length+' acima do alvo.</p><div class="row">'+rel.lentas.slice(0,8).map(x=>'<button class="btn sec sm" data-time-i="'+(x.i-1)+'">Q'+x.i+' · '+fmtCrono(x.seg)+'</button>').join('')+'</div></div>';}
+function renderHistoricoSimulados(){
+  const host=$('#sHist');if(!host)return;
+  const a=ls.get('cti_simulados',[]).slice(-20).reverse();
+  host.innerHTML=a.length?a.map(x=>'<div class="row" style="justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid var(--bd)"><div><b>'+esc(x.data||'')+' · '+esc(x.modo==='prova'?'Prova':x.modo==='treino'?'Treino':'Simulado')+'</b><div class="small muted">'+ pct(Number(x.ac)||0,Number(x.n)||0)+'% do total · '+(x.tempoSeg==null?'Tempo não registrado':fmtDuracao(x.tempoSeg))+'</div></div><div><b>'+Number(x.ac||0)+'/'+Number(x.n||0)+'</b><div class="tiny muted">'+(x.mediaSeg==null?'—':fmtCrono(x.mediaSeg)+' / questão')+'</div></div></div>').join(''):'<div class="empty small">Seus resultados aparecerão aqui após concluir um simulado.</div>';
+}
 function fmtDuracao(seg){
   seg=Math.max(0,Math.round(Number(seg)||0));
   const h=Math.floor(seg/3600), m=Math.floor((seg%3600)/60), ss=seg%60;
@@ -484,14 +515,17 @@ function fmtCrono(seg){
 function atualizarPreviewTempoSimulado(){
   const n=+($('#sN')?.value||20), modo=$('#sModo')?.value||'prova';
   const box=$('#sTempoBox'), info=$('#sTempoInfo'), sub=$('#sTempoSub'); if(!box||!info||!sub) return;
+  if($('#sTempoConfig'))$('#sTempoConfig').hidden=modo!=='prova';
   if(modo==='prova'){
-    box.classList.remove('assistido'); info.textContent=fmtDuracao(n*SIM_SEG_POR_QUESTAO); sub.textContent='3 min por questão · cronômetro regressivo';
+    const seg=simTempoEscolhido($('#sTempo')?.value);
+    box.classList.remove('assistido'); info.textContent=fmtDuracao(n*seg); sub.textContent=fmtDuracao(seg)+' por questão · cronômetro regressivo';
   }else{
     box.classList.add('assistido'); info.textContent='Sem limite'; sub.textContent='IA e correção após cada resposta';
   }
 }
 $('#sN').onchange=atualizarPreviewTempoSimulado;
 $('#sModo').onchange=atualizarPreviewTempoSimulado;
+$('#sTempo').onchange=atualizarPreviewTempoSimulado;
 setTimeout(atualizarPreviewTempoSimulado,0);
 
 $('#sStart').onclick = async () => {
@@ -508,8 +542,9 @@ $('#sStart').onclick = async () => {
     if (!itens.length){ $('#sInfo').textContent = 'Nenhuma questão com esses filtros.'; return; }
     const modo = $('#sModo').value;
     const desc = [$('#sExame').value || (focoPayload().length ? `Foco: ${focoResumo()}` : ''), $('#sEdicao').value, $('#sArea').value, $('#sTema').value].filter(Boolean).join(' · ') || 'Todas as provas e áreas';
-    const tempoTotalSec = modo==='prova' ? itens.length*SIM_SEG_POR_QUESTAO : 0;
-    iniciarSessao({tipo:'simulado', titulo:`Simulado (${itens.length} questões)`, sub:desc + (modo === 'prova' ? ` · Modo Prova · ${fmtDuracao(tempoTotalSec)} · sem IA durante a prova` : ' · Modo Treino · IA após cada questão'), questoes:itens, modo, tempoPorQuestaoSec:SIM_SEG_POR_QUESTAO, duracaoSec:tempoTotalSec, ...(returnTo === 'cera' ? {_origem:'cera'} : {}), onFim:() => mostrar(returnTo === 'cera' ? 'cera' : 'simulado')});
+    const tempoPorQuestao=simTempoEscolhido($('#sTempo').value);
+    const tempoTotalSec = modo==='prova' ? itens.length*tempoPorQuestao : 0;
+    iniciarSessao({tipo:'simulado', titulo:`Simulado (${itens.length} questões)`, sub:desc + (modo === 'prova' ? ` · Modo Prova · ${fmtDuracao(tempoTotalSec)} · sem IA durante a prova` : ' · Modo Treino · IA após cada questão'), questoes:itens, modo, tempoPorQuestaoSec:tempoPorQuestao, duracaoSec:tempoTotalSec, ...(returnTo === 'cera' ? {_origem:'cera'} : {}), onFim:() => mostrar(returnTo === 'cera' ? 'cera' : 'simulado')});
   }catch(e){ $('#sInfo').textContent='Erro ao montar simulado: '+e.message; }
   finally{ $('#sStart').disabled=false; }
 };
@@ -594,6 +629,13 @@ $('#eStart').onclick = async () => {
 
 /* ============================================================ SESSÃO / RENDERIZADOR DE QUESTÃO */
 let S = null, timerH = null;
+function simMedirQuestao(){
+  if(S?.tipo!=='simulado'||S.modo!=='prova'||S.finalizado||!S.tempos)return;
+  simTempoAtivo(S,document.hidden||viewAtual()!=='quiz'||S._enviando||S.idx>=S.questoes.length?null:S.questoes[S.idx].id,Math.min(Date.now(),S.deadline||Infinity));
+}
+document.addEventListener('visibilitychange',simMedirQuestao);
+window.addEventListener('pagehide',()=>{if(S?.tempos)simTempoAtivo(S,null,Math.min(Date.now(),S.deadline||Infinity));});
+window.addEventListener('pageshow',simMedirQuestao);
 function atualizarCronometroProva(){
   const el=$('#qzTimer'); if(!S||!el||S.modo!=='prova'||S.finalizado) return;
   const dur=Number(S.duracaoSec||S.questoes.length*(S.tempoPorQuestaoSec||SIM_SEG_POR_QUESTAO));
@@ -603,7 +645,12 @@ function atualizarCronometroProva(){
   el.title=`${fmtDuracao(dur)} no total · ${Math.round((S.tempoPorQuestaoSec||SIM_SEG_POR_QUESTAO)/60)} min por questão`;
   el.classList.toggle('tempo-atencao',rest>0&&rest<=dur*.25);
   el.classList.toggle('tempo-critico',rest>0&&rest<=dur*.10);
-  if(rest<=0&&!S._autoFinalizando){
+  const ritmo=$('#qzRitmo');
+  if(ritmo&&S.tipo==='simulado'){
+    const pend=S.questoes.filter(q=>!S.selecao[q.id]).length;
+    ritmo.hidden=false;ritmo.textContent=pend?'Ritmo necessário · '+fmtCrono(Math.floor(rest/pend))+'/questão':'Todas marcadas';
+  }
+  if(rest<=0&&!S._autoFinalizando&&!S._enviando){
     S._autoFinalizando=true; clearInterval(timerH); toast('Tempo esgotado. O simulado será entregue automaticamente.'); finalizarProva(true);
   }
 }
@@ -611,6 +658,7 @@ function iniciarSessao(cfg){
   const origem = viewAtual() === 'quiz' ? (S?._origem || 'painel') : viewAtual();
   S = Object.assign({idx:0, respostas:{}, selecao:{}, riscadas:{}, explic:{}, dicas:{}, inicio:Date.now(), finalizado:false, _origem:origem}, cfg);
   if (S.tipo === 'revisao') S.finalizado = true;
+  if(S.tipo==='simulado'&&S.modo==='prova'){S.tempos={};S.tempoAtivo=null;S.tempoInicio=S.inicio;}
   if(S.modo==='prova'){
     S.tempoPorQuestaoSec=Number(S.tempoPorQuestaoSec||SIM_SEG_POR_QUESTAO);
     S.duracaoSec=Number(S.duracaoSec||S.questoes.length*S.tempoPorQuestaoSec);
@@ -619,13 +667,15 @@ function iniciarSessao(cfg){
   $('#qzTitulo').textContent = S.titulo; $('#qzSub').textContent = S.sub || '';
   $('#view-quiz').classList.toggle('modo-prova', S.modo === 'prova');
   clearInterval(timerH); $('#qzTimer').hidden = S.modo !== 'prova';
+  $('#qzRitmo').hidden=true;
   $('#qzTimer').classList.remove('tempo-atencao','tempo-critico');
   if (S.modo === 'prova') { atualizarCronometroProva(); timerH=setInterval(atualizarCronometroProva,1000); }
   mostrar('quiz');
   renderQuestao();
 }
 $('#qzSair').onclick = () => {
-  if (!confirmarSaidaProva()) return;
+  if (S?._enviando||!confirmarSaidaProva()) return;
+  if(S?.tempos)simTempoAtivo(S,null,Math.min(Date.now(),S.deadline||Infinity));
   const destino = S?._origem || 'painel', plannerDay = S?.plannerDay || '';
   clearInterval(timerH);
   S = null;
@@ -646,6 +696,8 @@ function renderGrid(){
 }
 
 function renderQuestao(){
+  if(S._enviando)return;
+  simMedirQuestao();
   if (S.idx >= S.questoes.length) return renderResultado();
   const q = S.questoes[S.idx], r = S.respostas[q.id], sel = r ? r.sel : S.selecao[q.id];
   const respondida = !!r, prova = S.modo === 'prova' && !S.finalizado;
@@ -702,7 +754,7 @@ function renderQuestao(){
     finally { btn.disabled=false; }
     S.dicas[q.id]=d; $('#qzDica').innerHTML=dicaHtml(d);
   });
-  $('#qzFinal') && ($('#qzFinal').onclick = finalizarProva);
+  $('#qzFinal') && ($('#qzFinal').onclick = () => finalizarProva(false));
   ligarFav('#qzCard');
   if (respondida && S.explic[q.id]) setTimeout(moverNavAposIA, 0);
   if (respondida && !S.explic[q.id]) carregarIA(q, r);
@@ -1036,14 +1088,30 @@ async function abrirMiniEstacao(id){
 }
 
 async function finalizarProva(forcar=false){
-  const faltam = S.questoes.filter(q => !S.selecao[q.id]).length;
-  if (!forcar && faltam && !confirm(`Há ${faltam} questão(ões) em branco. Finalizar mesmo assim?`)) return;
+  const sess=S;if(!sess||sess.finalizado||sess._enviando)return;
+  const faltam=sess.questoes.filter(q=>!sess.selecao[q.id]).length;
+  if(forcar!==true&&faltam&&!confirm('Há '+faltam+' questão(ões) em branco. Finalizar mesmo assim?'))return;
+  sess._enviando=true;
+  const fim=Math.min(Date.now(),sess.deadline||Infinity);
+  if(sess.tempos)simTempoAtivo(sess,null,fim);
   clearInterval(timerH);
-  const r = await post('/api/responder-lote', {answers:S.questoes.map(q => ({question_id:q.id, selected_option:S.selecao[q.id] || null, access_token:q._access || ''}))});
-  const g = r.items || {};
-  S.questoes.forEach(q => { const sel = S.selecao[q.id] || null, z = g[q.id] || g[String(q.id)]; if (!z) return; const gab = z.gabarito_oficial; const ac = z.is_correct;
-    S.respostas[q.id] = {sel, acertou:ac, gab, answer_token:z.answer_token || ''}; registrar(q, ac, S.tipo); });
-  S.finalizado = true; S.idx = S.questoes.length; renderQuestao();
+  $$('#qzCard button,#qzGrid button').forEach(b=>b.disabled=true);
+  try{
+    const r=await post('/api/responder-lote',{answers:sess.questoes.map(q=>({question_id:q.id,selected_option:sess.selecao[q.id]||null,access_token:q._access||''}))});
+    const g=r.items||{};
+    if(sess.questoes.some(q=>!g[q.id]))throw Error('Correção incompleta. Tente novamente.');
+    sess.fim=fim;
+    sess.questoes.forEach(q=>{const sel=sess.selecao[q.id]||null,z=g[q.id];const gab=z.gabarito_oficial,ac=z.is_correct;
+      sess.respostas[q.id]={sel,acertou:ac,gab,answer_token:z.answer_token||''};registrar(q,ac,sess.tipo);});
+    sess.finalizado=true;sess.idx=sess.questoes.length;
+  }catch(e){
+    toast('Não foi possível entregar. Respostas preservadas nesta sessão. '+e.message);
+    sess._autoFinalizando=false;
+    if(Date.now()<(sess.deadline||0))timerH=setInterval(atualizarCronometroProva,1000);
+  }finally{
+    sess._enviando=false;
+    if(S===sess)renderQuestao();
+  }
 }
 function renderResultado(){
   renderGrid();
@@ -1051,25 +1119,30 @@ function renderResultado(){
   const ac = resp.filter(q => S.respostas[q.id].acertou).length;
   const porArea = {};
   resp.forEach(q => { const a = q.especialidade; porArea[a] = porArea[a] || {a:0, n:0}; porArea[a].n++; if (S.respostas[q.id].acertou) porArea[a].a++; });
-  const tempoSeg = Math.max(0,Math.round((Date.now() - S.inicio) / 1000));
+  S.fim=S.fim||Date.now();
+  const tempoSeg = Math.max(0,Math.round((S.fim - S.inicio) / 1000));
+  const rel=S.tipo==='simulado'&&S.tempos?simRelatorio(S):null;
+  $('#qzRitmo').hidden=true;
+  $('#qzTimer').hidden=true;
   const tempo = Math.max(1,Math.round(tempoSeg / 60));
   const ritmoSeg = resp.length ? Math.round(tempoSeg / resp.length) : 0;
-  if (S.tipo === 'simulado' && !S.registrado && resp.length){ S.registrado = true; const l = ls.get('cti_simulados', []); l.push({data:hoje(), n:tot, ac}); ls.set('cti_simulados', l); }
+  if (S.tipo === 'simulado' && !S.registrado && resp.length){ S.registrado = true; const l = ls.get('cti_simulados', []); l.push({data:hoje(), n:tot, ac, modo:S.modo, tempoSeg, mediaSeg:rel?.media??null, tempoAlvo:S.modo==='prova'?S.tempoPorQuestaoSec:null}); ls.set('cti_simulados', l); }
   if (S.tipo === 'diagnostico' && !S.registrado && resp.length){ S.registrado=true; ls.set(DIAG_KEY,{data:hoje(),n:tot,ac,ts:Date.now()}); }
   if (S.plannerKey && resp.length === tot) plannerSetDone(S.plannerKey, true);
   $('#qzCard').innerHTML = `<h2>${ic('trophy')}Resultado</h2>
     <div class="grid g4"><div class="kpi"><span class="small">Acertos</span><b style="color:${corAcerto(pct(ac, resp.length))}">${ac}/${resp.length}</b></div>
-      <div class="kpi"><span class="small">Aproveitamento</span><b>${pct(ac, resp.length)}%</b></div><div class="kpi"><span class="small">Não respondidas</span><b>${tot - resp.length}</b></div>
+      <div class="kpi"><span class="small">Aproveitamento</span><b>${pct(ac, resp.length)}%</b></div><div class="kpi"><span class="small">Não respondidas</span><b>${S.modo==='prova'?tot-resp.filter(q=>S.respostas[q.id].sel).length:tot-resp.length}</b></div>
       <div class="kpi"><span class="small">Tempo</span><b>${tempo} min</b></div></div>
-    ${S.modo==='prova'?`<div class="sim-result-time"><b>Gestão do tempo:</b> média de <b>${fmtCrono(ritmoSeg)}</b> por questão respondida · alvo <b>${fmtCrono(S.tempoPorQuestaoSec||SIM_SEG_POR_QUESTAO)}</b>.</div>`:''}
+    ${rel ? simRelatorioHtml(rel,S) : S.modo==='prova' ? '<div class="sim-result-time"><b>Gestão do tempo:</b> média de '+fmtCrono(ritmoSeg)+' por questão corrigida.</div>' : ''}
     <h3 style="margin-top:16px">Por área</h3>${barrasH(Object.entries(porArea).map(([a, s]) => ({label:AREA_CURTA[a] || a, value:pct(s.a, s.n), n:s.n})))}
     <p class="small muted">Clique nos números acima para rever cada questão com a explicação completa da IA. Os erros já estão nas Revisões.</p>
     <div class="row"><button class="btn" id="rsRev">${ic('search')}Revisar desde a 1ª</button><button class="btn sec" id="rsSair">${S.plannerDay ? 'Continuar missão do dia' : 'Concluir'}</button></div>`;
+  $('#qzCard [data-time-i]').forEach(b=>b.onclick=()=>{S.idx=Number(b.dataset.timeI);renderQuestao();});
   $('#rsRev').onclick = () => { S.idx = 0; renderQuestao(); };
   $('#rsSair').onclick = () => $('#qzSair').click();
 }
 function teclas(e){
-  if (!S || !$('#view-quiz').classList.contains('on') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  if (!S || S._enviando || !$('#view-quiz').classList.contains('on') || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
   const k = e.key.toUpperCase(), q = S.questoes[S.idx];
   if (q && LETRAS.includes(k) && q['alt_' + k] && !S.respostas[q.id]){ S.selecao[q.id] = k; renderQuestao(); }
   else if (e.key === 'Enter' && $('#qzConf') && !$('#qzConf').disabled) confirmar(q);
