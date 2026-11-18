@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  // Sync manual, fail-safe. Nenhuma leitura massiva ou gravação é feita no boot.
+  // Sync fail-safe: modo automático opt-in pelo servidor, sem bloquear o carregamento.
   const META_KEY='cti_sync_meta_safe_v2';
   const GROUPS={
     progress:[
@@ -14,7 +14,10 @@
       'cti_2fase','cti_doc_treinos','cti_simulados','cti_mini_estacao_hist_v2','cti_diagnostico_inicial_v31','cti_planner_exec'
     ]
   };
-  const STATE={busy:false,available:false,last:null,error:'',received:false};
+  const STATE={busy:false,available:false,automatic:false,last:null,error:'',received:false,deferred:false};
+  let autoTimer=null, lastAttempt=0, autoPaused=false;
+  const AUTO_MIN=30000, AUTO_NEXT=45000, AUTO_RETRY=120000;
+  const canReceive=()=>!STATE.automatic||window.CTI_SYNC_VIEW?.canReceive?.()===true;
   const MAX_KEY_CHARS=350000;
   const MAX_REQUEST_BYTES=800000;
   const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -41,7 +44,7 @@
       const cfg=Object.assign({credentials:'same-origin',cache:'no-store',signal:controller.signal},opt||{});
       const response=await fetch(url,cfg);
       const payload=await response.json().catch(()=>({}));
-      if(response.status===401)throw new Error('Sessão expirada. Entre novamente para sincronizar.');
+      if(response.status===401){const e=new Error('Sessão expirada. Entre novamente para sincronizar.');e.status=401;throw e;}
       if(!response.ok){
         const e=new Error(typeof payload.detail==='string'&&payload.detail!=='SYNC_CONFLICT'
           ?payload.detail:'Não foi possível sincronizar. Tente novamente.');
@@ -155,6 +158,7 @@
     const local=await capture(ns);
     const previous=meta.namespaces[ns]||{initialized:false,version:0,seen:{}};
     const p=plan(ns,local,remote,previous);
+    if(p.received.length&&!canReceive())return {deferred:true,received:false};
     backupBootstrapValues(ns,p.received);
     let version=Number(remote.version||0);
     if(p.changedServer){
@@ -167,13 +171,17 @@
       });
       version=Number(saved.version);
     }
-    // Aplicação só depois da confirmação do servidor e da validação de conflitos.
+    // Após a rede, confirme novamente que a tela e o snapshot são seguros.
+    if(p.received.length&&(!canReceive()||p.received.some(item=>localStorage.getItem(item.key)!==local[item.key]))){
+      return {deferred:true,received:false};
+    }
+    // Atualização local e memória no mesmo turno; não ceder entre registros recebidos.
     for(const item of p.received){
-      await pause();
       if(item.raw===null)localStorage.removeItem(item.key);
       else localStorage.setItem(item.key,item.raw);
       local[item.key]=item.raw;
     }
+    if(STATE.automatic&&p.received.length)window.CTI_SYNC_VIEW.apply(p.received.map(item=>item.key));
     const seen={};
     for(const key of GROUPS[ns]){
       await pause();
@@ -181,32 +189,47 @@
     }
     meta.namespaces[ns]={initialized:true,version,seen};
     saveMeta(meta);
-    return p.received.length>0;
+    return {received:p.received.length>0,deferred:false};
+  }
+
+  function scheduleAuto(delay=AUTO_NEXT){
+    if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}
+    if(!STATE.automatic||!STATE.available||autoPaused||!navigator.onLine||document.hidden)return;
+    const wait=Math.max(delay,AUTO_MIN-(now()-lastAttempt),0);
+    autoTimer=setTimeout(async()=>{
+      autoTimer=null;
+      if(!STATE.automatic||autoPaused||document.hidden||!navigator.onLine)return;
+      if(STATE.busy){scheduleAuto(AUTO_NEXT);return;}
+      await syncAll(false);
+    },wait);
   }
 
   async function syncAll(manual=false){
     if(STATE.busy||!STATE.available||!navigator.onLine)return false;
-    // Só executa mediante clique explícito; sem intervalos, focus ou reload.
-    STATE.busy=true;STATE.error='';renderStatus();
+    // Uma execução por aba; sem reload e com intervalo mínimo automático.
+    if(manual){autoPaused=false;if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}}
+    lastAttempt=now();
+    STATE.busy=true;STATE.error='';STATE.deferred=false;renderStatus();
     let received=false;
     const meta=getMeta();
     try{
       for(const ns of Object.keys(GROUPS)){
-        received=(await syncNamespace(ns,meta))||received;
+        const result=await syncNamespace(ns,meta);
+        received=result.received||received;
+        STATE.deferred=result.deferred||STATE.deferred;
       }
-      meta.lastSync=now();
-      saveMeta(meta);
-      STATE.last=meta.lastSync;
-      STATE.received=received;
+      if(!STATE.deferred){meta.lastSync=now();saveMeta(meta);STATE.last=meta.lastSync;}
+      STATE.received=received&&!STATE.automatic;
       if(manual&&typeof window.toast==='function'){
-        window.toast(received?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.');
+        window.toast(STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.');
       }
       return true;
     }catch(e){
       STATE.error=e.message||'Sincronização indisponível.';
+      if(e.status===401||/^Conflito em |^O estado remoto foi reiniciado/.test(STATE.error))autoPaused=true;
       if(manual&&typeof window.toast==='function')window.toast(STATE.error);
       return false;
-    }finally{STATE.busy=false;renderStatus()}
+    }finally{STATE.busy=false;renderStatus();scheduleAuto(STATE.error?AUTO_RETRY:AUTO_NEXT)}
   }
 
   function statusText(){
@@ -214,6 +237,7 @@
     if(!navigator.onLine)return 'Offline · alterações serão sincronizadas ao reconectar';
     if(STATE.busy)return 'Sincronizando…';
     if(STATE.error)return 'Sincronização pendente · '+STATE.error;
+    if(STATE.deferred)return 'Dados disponíveis · volte ao painel para receber';
     if(STATE.received)return 'Dados recebidos · atualize a página para visualizá-los';
     if(STATE.last)return 'Sincronizado · '+new Date(STATE.last).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     return 'Pronto para sincronizar';
@@ -221,6 +245,9 @@
   function renderStatus(){
     document.querySelectorAll('[data-sync-status]').forEach(el=>el.textContent=statusText());
     document.querySelectorAll('[data-sync-now]').forEach(b=>b.disabled=STATE.busy||!STATE.available||!navigator.onLine);
+    const badge=document.getElementById('btnConta');
+    if(badge){badge.title=statusText();badge.setAttribute('aria-label','Conta e sincronização: '+statusText());
+      const dot=badge.querySelector('[data-sync-dot]');if(dot)dot.style.background=STATE.error?'#dc2626':!navigator.onLine?'#64748b':STATE.busy||STATE.deferred?'#d97706':STATE.last?'#16a34a':'#64748b';}
   }
 
   function ensureUI(){
@@ -228,7 +255,7 @@
     const header=document.querySelector('.hdr-act');
     if(header&&!document.getElementById('btnConta')){
       const b=document.createElement('button');b.className='icon-btn';b.id='btnConta';b.title='Conta e sincronização';
-      b.innerHTML='<svg class="i"><use href="#i-lock"/></svg>';header.insertBefore(b,document.getElementById('btnLogout'));b.onclick=openAccount;
+      b.innerHTML='<svg class="i"><use href="#i-lock"/></svg><span data-sync-dot aria-hidden="true" style="position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:#64748b;pointer-events:none"></span>';b.style.position='relative';header.insertBefore(b,document.getElementById('btnLogout'));b.onclick=openAccount;
     }
     const sheet=document.querySelector('#sheet>div');
     if(sheet&&!document.getElementById('shConta')){
@@ -284,6 +311,7 @@
     try{
       const st=await req('/api/auth/status');
       STATE.available=!!st.sync_available;
+      STATE.automatic=STATE.available&&st.sync_auto_available===true;
       if(!st.password_change_available){
         const box=document.querySelector('.account-password-box');
         if(box)box.innerHTML='<h3>Alteração de senha</h3><p class="small muted">A troca de senha dentro do CTI ainda não está disponível nesta modalidade de conta.</p>';
@@ -293,9 +321,14 @@
       STATE.error='';
     }
     renderStatus();
-    // Sem sincronização no carregamento, timers, focus, visibility ou reload.
+    if(STATE.automatic){
+      window.addEventListener('online',()=>{renderStatus();scheduleAuto(1000)});
+      window.addEventListener('offline',()=>{if(autoTimer!==null){clearTimeout(autoTimer);autoTimer=null;}renderStatus()});
+      document.addEventListener('visibilitychange',()=>scheduleAuto(document.hidden?AUTO_NEXT:1000));
+      scheduleAuto(2000);
+    }
   }
 
-  window.CTI_SYNC={syncNow:()=>syncAll(true),status:()=>({available:STATE.available,last:STATE.last,error:STATE.error})};
+  window.CTI_SYNC={syncNow:()=>syncAll(true),status:()=>({available:STATE.available,automatic:STATE.automatic,last:STATE.last,error:STATE.error,deferred:STATE.deferred}),onDashboard:()=>{if(STATE.deferred)scheduleAuto(1000)}};
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',boot):boot();
 })();
