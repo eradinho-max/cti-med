@@ -1,0 +1,86 @@
+
+/* Método CERA — escopo isolado; preserva estilos e navegação existentes. */
+#ctiCeraHub{margin:18px 0;scroll-margin-top:92px}
+#ctiCeraHub .cera-top{display:grid;gap:20px;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:center}
+#ctiCeraHub .cera-top h2{font-size:clamp(1.25rem,2.2vw,1.7rem);margin:9px 0 5px;line-height:1.25}
+#ctiCeraHub p{line-height:1.55}
+#ctiCeraHub .cera-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+#ctiCeraHub .cera-kpis>div{display:flex;flex-direction:column;gap:3px;background:var(--card2);border:1px solid var(--bd);border-radius:12px;padding:13px 10px;min-width:0}
+#ctiCeraHub .cera-kpis b{font-size:1.55rem;line-height:1.2;font-variant-numeric:tabular-nums}
+#ctiCeraHub .cera-kpis span{font-size:.8rem;color:var(--mut);line-height:1.3}
+#ctiCeraHub .cera-filters{display:grid;grid-template-columns:minmax(180px,1fr) minmax(240px,1.8fr) auto;align-items:end;gap:10px;margin:22px 0 12px}
+#ctiCeraHub .cera-filters .f{min-width:0;margin:0}
+#ctiCeraHub select,#ctiCeraHub textarea{font-size:1rem;max-width:100%;color:var(--tx);background:var(--card)}
+#ctiCeraHub .cera-selected{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;background:var(--card2);border:1px solid var(--bd);border-radius:11px;padding:12px 14px}
+#ctiCeraHub .cera-selected b{font-size:1.05rem}
+#ctiCeraHub .cera-flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin:15px 0}
+#ctiCeraHub .cera-flow span{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;border:1px solid var(--bd);border-radius:10px;padding:10px 5px;color:var(--mut);font-size:.83rem;font-weight:700}
+#ctiCeraHub .cera-flow b{display:flex;align-items:center;justify-content:center;flex:none;min-width:25px;height:25px;border-radius:8px;background:var(--card2)}
+#ctiCeraHub .cera-flow .active{border-color:var(--red);background:var(--redl);color:var(--tx)}
+#ctiCeraHub .cera-flow .active b{background:var(--red);color:white}
+#ctiCeraHub .cera-flow .done b{color:var(--ok)}
+#ctiCeraHub .cera-panel{padding:20px;border:1px solid var(--bd);border-radius:14px;margin:16px 0;background:var(--card)}
+#ctiCeraHub .cera-panel h3{font-size:1.22rem;margin:7px 0 8px}
+#ctiCeraHub .cera-step-tag{font-size:.8rem;text-transform:uppercase;letter-spacing:.045em;font-weight:800;color:var(--red)}
+#ctiCeraHub .cera-hint{padding:12px 14px;background:var(--card2);border-left:3px solid var(--red);border-radius:7px;font-size:.89rem;line-height:1.5;margin:13px 0}
+#ctiCeraHub .cera-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:16px}
+#ctiCeraHub .cera-actions button{min-height:40px}
+#ctiCeraHub .cera-prompt{display:flex;flex-direction:column;gap:8px;margin:15px 0;font-size:.95rem}
+#ctiCeraHub .cera-prompt textarea,#ctiCeraHub .f textarea{display:block;width:100%;min-height:92px;resize:vertical;border:1px solid var(--bd);border-radius:9px;padding:12px;line-height:1.5}
+#ctiCeraHub .cera-results{max-width:640px;margin-top:12px}
+#ctiCeraHub .cera-check{display:flex;align-items:flex-start;gap:10px;font-size:.95rem;line-height:1.5;margin:16px 0}
+#ctiCeraHub .cera-check input{width:19px;height:19px;flex:none;accent-color:var(--red)}
+#ctiCeraHub .cera-due{padding:16px 0 4px;border-top:1px solid var(--bd)}
+#ctiCeraHub .cera-due .sec-t{margin-bottom:8px}
+#ctiCeraHub .cera-due-item{display:flex;align-items:center;justify-content:space-between;text-align:left;gap:10px;width:100%;padding:12px;margin:7px 0;border-radius:10px;border:1px solid var(--bd);background:var(--card2);color:var(--tx);cursor:pointer}
+#ctiCeraHub .cera-due-item span{font-size:.82rem;color:var(--mut)}
+#ctiCeraHub .cera-due-item:hover{border-color:var(--red)}
+#ctiCeraHub .cera-foot{padding:10px 0 0}
+#ctiCeraHub button:focus-visible,#ctiCeraHub textarea:focus-visible,#ctiCeraHub select:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+#ctiCeraSide{display:flex;align-items:center;gap:9px}
+#ctiCeraSide span{font-size:1.2rem;line-height:1}
+@media(max-width:1024px){
+  #ctiCeraHub .cera-top{grid-template-columns:1fr}
+}
+@media(max-width:750px){
+  #ctiCeraHub{margin:13px 0}
+  #ctiCeraHub .cera-panel{padding:14px}
+  #ctiCeraHub .cera-filters{grid-template-columns:1fr}
+  #ctiCeraHub .cera-filters button{width:100%}
+  #ctiCeraHub .cera-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #ctiCeraHub .cera-flow{grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+  #ctiCeraHub .cera-flow span{display:flex;flex-direction:column;gap:5px;padding:8px 2px;font-size:.65rem}
+  #ctiCeraHub .cera-flow b{min-width:23px;height:23px}
+  #ctiCeraHub .cera-actions{display:grid;grid-template-columns:1fr}
+  #ctiCeraHub .cera-actions button{width:100%;justify-content:center}
+  #ctiCeraHub .cera-due-item{align-items:flex-start;flex-direction:column;gap:3px}
+  #ctiCeraHub .cera-kpis b{font-size:1.35rem}
+}
+@media(prefers-reduced-motion:reduce){#ctiCeraHub *{scroll-behavior:auto!important}}
+
+
+/* Página própria do CERA: apresentação compacta com explicação sob demanda. */
+#view-cera{min-width:0}
+#view-cera .cera-banner{margin-bottom:16px}
+#view-cera .cera-banner p{max-width:900px;line-height:1.6}
+#view-cera .cera-guide{padding:0;margin:0 0 16px;overflow:hidden}
+#view-cera .cera-guide summary{display:flex;align-items:center;justify-content:space-between;gap:12px;list-style:none;cursor:pointer;padding:17px 20px;font-weight:800;font-size:1rem}
+#view-cera .cera-guide summary::-webkit-details-marker{display:none}
+#view-cera .cera-guide summary:focus-visible{outline:3px solid var(--red);outline-offset:-3px}
+#view-cera .cera-guide-chevron{font-size:1.3rem;transition:transform .15s ease}
+#view-cera .cera-guide[open] .cera-guide-chevron{transform:rotate(180deg)}
+#view-cera .cera-guide>p{padding:0 20px;margin:0 0 14px;line-height:1.55}
+#view-cera .cera-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 20px 12px}
+#view-cera .cera-guide-grid>div{background:var(--card2);border:1px solid var(--bd);border-radius:11px;padding:14px}
+#view-cera .cera-guide-grid b{display:flex;align-items:center;gap:9px}
+#view-cera .cera-guide-grid p{font-size:.9rem;line-height:1.5;color:var(--mut);margin:8px 0 0}
+#view-cera .cera-guide-letter{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;color:#fff;font-size:.95rem;flex:none}
+#view-cera .cera-c{background:#2563eb}
+#view-cera .cera-e{background:#059669}
+#view-cera .cera-r{background:#d97706}
+#view-cera .cera-a{background:#9333ea}
+@media(max-width:700px){
+  #view-cera .cera-guide summary{padding:15px}
+  #view-cera .cera-guide>p{padding:0 15px}
+  #view-cera .cera-guide-grid{grid-template-columns:1fr;padding:0 15px 12px}
+}

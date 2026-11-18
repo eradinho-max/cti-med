@@ -161,7 +161,7 @@ function retaFinalAtiva(){ const d=diasAteProva(); return d!==null&&d>=0&&d<=42;
 let STATS = null, INDICE = [], IDX = {}, REFORCO = null, AUTH_STATUS = null, ADMIN_STATUS = null;
 
 /* ============================================================ navegação interna do PWA */
-const ROTAS = new Set(['painel','missao','banco','simulado','erros','favoritos','desempenho','reforco','segunda','atualizacoes','admin','quiz']);
+const ROTAS = new Set(['painel','missao','banco','simulado','erros','favoritos','desempenho','reforco','cera','segunda','atualizacoes','admin','quiz']);
 let NAV_READY = false;
 function viewAtual(){
   const v = $('.view.on');
@@ -290,6 +290,7 @@ function mostrar(v, opts = {}){
   if (v === 'banco' && !$('#bLista').children.length && STATS) buscarBanco(true);
   if (v === 'desempenho') renderDesempenho();
   if (v === 'reforco') renderReforco();
+  if (v === 'cera') window.CTI_CERA?.refresh?.();
   if (v === 'segunda') renderFase2();
   if (v === 'atualizacoes') renderAtualizacoes();
   if (v === 'admin') renderAdmin();
@@ -448,6 +449,8 @@ $('#sStart').onclick = async () => {
   const body = {n, ordem:$('#sOrdem').value === 'aleatoria' ? 'aleatoria' : 'prova', apenas_novas:$('#sIncl').value === 'novas', vistas:HIST.slice(-1200).map(h=>h.id), seed:String(Date.now())};
   for (const [k, sel] of [['exame', '#sExame'], ['edicao', '#sEdicao'], ['especialidade', '#sArea'], ['tema', '#sTema']]) if ($(sel).value) body[k] = $(sel).value;
   focoAplicarNoBody(body, body.exame || '');
+  const returnTo = $('#sStart').dataset.ctiReturn || '';
+  delete $('#sStart').dataset.ctiReturn;
   $('#sStart').disabled=true; $('#sInfo').textContent='Montando simulado…';
   try{
     const r = await post('/api/simulado', body);
@@ -456,7 +459,7 @@ $('#sStart').onclick = async () => {
     const modo = $('#sModo').value;
     const desc = [$('#sExame').value || (focoPayload().length ? `Foco: ${focoResumo()}` : ''), $('#sEdicao').value, $('#sArea').value, $('#sTema').value].filter(Boolean).join(' · ') || 'Todas as provas e áreas';
     const tempoTotalSec = modo==='prova' ? itens.length*SIM_SEG_POR_QUESTAO : 0;
-    iniciarSessao({tipo:'simulado', titulo:`Simulado (${itens.length} questões)`, sub:desc + (modo === 'prova' ? ` · Modo Prova · ${fmtDuracao(tempoTotalSec)} · sem IA durante a prova` : ' · Modo Treino · IA após cada questão'), questoes:itens, modo, tempoPorQuestaoSec:SIM_SEG_POR_QUESTAO, duracaoSec:tempoTotalSec, onFim:() => mostrar('simulado')});
+    iniciarSessao({tipo:'simulado', titulo:`Simulado (${itens.length} questões)`, sub:desc + (modo === 'prova' ? ` · Modo Prova · ${fmtDuracao(tempoTotalSec)} · sem IA durante a prova` : ' · Modo Treino · IA após cada questão'), questoes:itens, modo, tempoPorQuestaoSec:SIM_SEG_POR_QUESTAO, duracaoSec:tempoTotalSec, ...(returnTo === 'cera' ? {_origem:'cera'} : {}), onFim:() => mostrar(returnTo === 'cera' ? 'cera' : 'simulado')});
   }catch(e){ $('#sInfo').textContent='Erro ao montar simulado: '+e.message; }
   finally{ $('#sStart').disabled=false; }
 };
@@ -576,7 +579,9 @@ $('#qzSair').onclick = () => {
   const destino = S?._origem || 'painel', plannerDay = S?.plannerDay || '';
   clearInterval(timerH);
   S = null;
-  if (history.state?.cti && history.state.view === 'quiz' && history.length > 1) history.back();
+  // O treino acionado pelo CERA deve retornar ao método, não ao formulário de simulados.
+  if (destino === 'cera') mostrar('cera', {substituir:true});
+  else if (history.state?.cti && history.state.view === 'quiz' && history.length > 1) history.back();
   else mostrar(destino, {substituir:true});
   if (plannerDay) { setTimeout(() => { if (viewAtual() !== 'reforco') mostrar('reforco'); plannerScrollDia(plannerDay); }, 180); }
 };
@@ -1152,7 +1157,7 @@ function renderEvolucao(){
   $('#dEvol').innerHTML = barrasV(dados);
 }
 $('#dEvArea').onchange = renderEvolucao; $('#dEvPer').onchange = renderEvolucao;
-window.treinarArea = (area, tema) => { mostrar('simulado'); $('#sArea').value = area || (tema ? INDICE.find(i => i.tema === tema)?.area : '') || ''; $('#sArea').onchange(); $('#sTema').value = tema || ''; $('#sModo').value = 'treino'; $('#sN').value = '10'; $('#sStart').click(); };
+window.treinarArea = (area, tema, returnTo = '') => { mostrar('simulado'); $('#sArea').value = area || (tema ? INDICE.find(i => i.tema === tema)?.area : '') || ''; $('#sArea').onchange(); $('#sTema').value = tema || ''; $('#sModo').value = 'treino'; $('#sN').value = '10'; if (returnTo === 'cera') $('#sStart').dataset.ctiReturn = 'cera'; $('#sStart').click(); };
 const CHAVES_APP = k => k.startsWith('medquest_') || k.startsWith('cti_');
 $('#dExport').onclick = () => {   // backup completo: histórico, revisões, missões, planner, favoritos, metas, perfil, simulados…
   const d = {_cti_backup:1, _data:new Date().toISOString()};

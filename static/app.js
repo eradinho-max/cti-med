@@ -12,6 +12,7 @@
       load('/static/mb32.js?v=32.0.0', function(){
       load('/static/mb33.js?v=33.0.0', function(){
         load('/static/kotu.js?v=32.1.0');
+        load('/static/cera.js?v=1.0.0');
       });
     });
     });

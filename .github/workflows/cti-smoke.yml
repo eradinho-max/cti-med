@@ -35,6 +35,9 @@ jobs:
           node --check static/cti-app-v31.js
           node --check static/mb32.js
           node --check static/mb33.js
+          node --check static/cera.js
+          node tools/test_cera_suggestions.cjs
+          node tools/test_cera_standalone.cjs
           node --check static/kotu.js
           node --check static/sync.js
           node --check static/sw.js
@@ -119,6 +122,9 @@ jobs:
           sw=Path("static/sw.js").read_text()
           assert "serviceWorker" not in sw or "fetch" in sw
           assert "/static/offline.html" in sw
+          assert "/static/cera.js" in Path("static/app.js").read_text()
+          assert "/static/cera.css" in Path("static/app.css").read_text()
+          assert "cti_cera_v1" in Path("static/sync.js").read_text()
           PY
       - name: API smoke tests
         run: |
