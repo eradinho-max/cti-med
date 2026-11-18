@@ -275,7 +275,7 @@ async function init(){
   renderPainel();
   window.CTI_SYNC?.onDashboard?.();
   document.addEventListener('keydown', teclas);
-  if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => { if (r.scope.endsWith('/static/')) r.unregister(); })).catch(() => {}); navigator.serviceWorker.register('/sw.js', {scope:'/'}).catch(() => {});
+  // PWA registration is shared with the login page in static/pwa.js.
 }
 
 function opcoes(sel, valores, todos = 'Todas', rotulo = v => v){ sel.innerHTML = (todos ? `<option value="">${todos}</option>` : '') + valores.map(v => `<option value="${esc(v)}">${esc(rotulo(v))}</option>`).join(''); }
