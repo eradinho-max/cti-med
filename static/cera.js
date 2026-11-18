@@ -41,12 +41,23 @@
     for(const t of out){const h=counts.get(key(t.area,t.theme))||{n:0,ok:0};t.attempts=h.n;t.accuracy=h.n?Math.round(100*h.ok/h.n):null}
     return out.sort((a,b)=>a.area.localeCompare(b.area,'pt-BR')||a.theme.localeCompare(b.theme,'pt-BR'));
   }
-  function recommend(rows){
+  function ranked(rows){
     return rows.slice().sort((a,b)=>{
       const aw=a.attempts>=3?(100-a.accuracy):null,bw=b.attempts>=3?(100-b.accuracy):null;
       if(aw!==null||bw!==null){if(aw===null)return 1;if(bw===null)return -1;if(aw!==bw)return bw-aw}
-      return b.count-a.count;
-    })[0]||null;
+      return b.count-a.count||a.area.localeCompare(b.area,'pt-BR')||a.theme.localeCompare(b.theme,'pt-BR');
+    });
+  }
+  function recommend(rows){return ranked(rows)[0]||null}
+  function nextSuggestion(rows,currentKey,studyRecords){
+    const all=ranked(rows);
+    const fresh=all.filter(x=>!studyRecords[key(x.area,x.theme)]);
+    // Percorre primeiro os temas não iniciados. Com apenas um restante,
+    // usa o catálogo completo para não repetir o mesmo tema indefinidamente.
+    const pool=fresh.length>=2?fresh:all;
+    if(!pool.length)return null;
+    const index=pool.findIndex(x=>key(x.area,x.theme)===currentKey);
+    return pool[index<0?0:(index+1)%pool.length];
   }
   function selected(rows){
     let t=rows.find(x=>x.area===state.area&&x.theme===state.theme);
@@ -152,7 +163,7 @@
     const rec=current(),t=topics().find(x=>x.area===state.area&&x.theme===state.theme);
     if(action==='refresh'){render();return}
     if(action==='suggest'){
-      const recommended=recommend(topics().filter(x=>!db.topics[key(x.area,x.theme)]))||recommend(topics());
+      const recommended=nextSuggestion(topics(),key(state.area,state.theme),db.topics);
       if(recommended){state.area=recommended.area;state.theme=recommended.theme;db.active=key(state.area,state.theme);resetForm();persist();render()}return;
     }
     if(action==='start'){
