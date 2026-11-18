@@ -274,10 +274,12 @@
       <label class="f">Nº de questões<select id="sN"><option>10</option><option selected>20</option><option>30</option><option>40</option><option>50</option><option>100</option></select></label>
       <label class="f">Ordem<select id="sOrdem"><option value="aleatoria">Aleatória</option><option value="prova">Ordem da prova</option></select></label>
       <label class="f">Incluir<select id="sIncl"><option value="novas">Priorizar não respondidas</option><option value="todas">Todas</option></select></label>
+      <label class="f" id="sTempoConfig">Tempo por questão<select id="sTempo"><option value="60">1 min</option><option value="90">1 min 30 s</option><option value="120">2 min</option><option value="150">2 min 30 s</option><option value="180" selected>3 min (padrão)</option><option value="240">4 min</option><option value="300">5 min</option></select></label>
       <div class="sim-time-preview" id="sTempoBox"><span class="tiny muted">Tempo do simulado</span><b id="sTempoInfo">1h 00min</b><span class="tiny muted" id="sTempoSub">3 min por questão</span></div>
     </div>
     <div class="row" style="margin-top:14px"><button class="btn" id="sStart"><svg class="i"><use href="#i-play"/></svg>Iniciar simulado</button><span class="small muted" id="sInfo"></span></div>
   </div>
+  <div class="card"><div class="sec-t"><span>Histórico dos simulados</span></div><p class="small muted">Compare acertos e ritmo. Resultados anteriores sem registro de tempo continuam disponíveis.</p><div id="sHist"></div></div>
 </section>
 
 <!-- ======================= BANCO ======================= -->
@@ -537,7 +539,7 @@
   <div class="card">
     <div class="row" style="justify-content:space-between">
       <div><h3 id="qzTitulo" style="margin:0">Sessão</h3><span class="small muted" id="qzSub"></span></div>
-      <div class="row"><span class="pill sim-countdown" id="qzTimer" hidden>Tempo restante · 00:00</span><button class="btn sec sm" id="qzSair" aria-label="Voltar para a tela anterior"><svg class="i"><use href="#i-back"/></svg>Voltar</button></div>
+      <div class="row"><span class="pill sim-countdown" id="qzTimer" hidden>Tempo restante · 00:00</span><span class="pill" id="qzRitmo" hidden></span><button class="btn sec sm" id="qzSair" aria-label="Voltar para a tela anterior"><svg class="i"><use href="#i-back"/></svg>Voltar</button></div>
     </div>
     <div class="progress" style="margin-top:10px"><i id="qzBar" style="width:0"></i></div>
     <div class="qgrid" id="qzGrid"></div>
@@ -582,6 +584,6 @@
 <div class="toast" id="toast"></div>
 
 <script src="/static/pwa.js?v=1" defer></script>
-<script src="/static/app.js?v=31.0.2" defer></script>
+<script src="/static/app.js?v=31.1.0" defer></script>
 </body>
 </html>
