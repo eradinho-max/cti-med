@@ -330,7 +330,7 @@ function mostrar(v, opts = {}){
 // Receber somente no painel, sem formulário ativo nem questão em andamento.
 // O estado em memória deve acompanhar o armazenamento antes de novos registros.
 window.CTI_SYNC_VIEW={
-  canReceive:()=>!!STATS&&viewAtual()==='painel'&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&!destaqueBusy,
+  canReceive:()=>!!STATS&&viewAtual()==='painel'&&!document.querySelector('dialog[open]:not(#ctiAccountDialog)')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&!destaqueBusy,
   apply:keys=>{
     if(keys.includes('medquest_historico'))HIST=ls.get('medquest_historico',[]);
     if(keys.includes('medquest_erros'))ERROS=ls.get('medquest_erros',[]);
