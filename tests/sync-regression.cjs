@@ -86,7 +86,8 @@ async function browser(initial={}){
  assert.equal(await phone.sync(),false,'conflict must fail');
  assert.equal(phone.map.get('medquest_historico'),prior,'local conflict must survive');
  assert.equal(store.progress.data.items.medquest_historico.raw,'["q1","q2","pc"]');
- // A conta de origem salvou também preferências geradas automaticamente.\n store.progress.data.items.medquest_semente={raw:'"seed-pc"',modified:1}
+ // A conta de origem salvou também preferências geradas automaticamente.
+ store.progress.data.items.medquest_semente={raw:'"seed-pc"',modified:1};
  store.progress.data.items.cti_destaque={raw:JSON.stringify({data:'2026-11-18',id:111}),modified:1};
 
  // Valores automáticos do celular não bloqueiam a primeira recuperação.
