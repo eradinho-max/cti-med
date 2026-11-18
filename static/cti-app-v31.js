@@ -312,7 +312,7 @@ function mostrar(v, opts = {}){
   $('#sheet').classList.remove('on');
   $$('.view').forEach(x => x.classList.toggle('on', x.id === 'view-' + v));
   $$('#tabs button, #side button[data-v], #bnav button[data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v === 'painel') renderPainel();
+  if (v === 'painel') { renderPainel(); window.CTI_SYNC?.onDashboard?.(); }
   if (v === 'favoritos') renderFavoritos();
   if (v === 'missao') renderMissao();
   if (v === 'erros') renderErros();
@@ -326,6 +326,26 @@ function mostrar(v, opts = {}){
   if (!opts.semHistorico) registrarRota(v, !!opts.substituir);
   window.scrollTo({top:0, behavior:opts.semHistorico ? 'auto' : 'smooth'});
 }
+
+// Receber somente no painel, sem formulário ativo nem questão em andamento.
+// O estado em memória deve acompanhar o armazenamento antes de novos registros.
+window.CTI_SYNC_VIEW={
+  canReceive:()=>!!STATS&&viewAtual()==='painel'&&!document.querySelector('dialog[open]')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&!destaqueBusy,
+  apply:keys=>{
+    if(keys.includes('medquest_historico'))HIST=ls.get('medquest_historico',[]);
+    if(keys.includes('medquest_erros'))ERROS=ls.get('medquest_erros',[]);
+    if(keys.includes('medquest_missao'))MISSAO=ls.get('medquest_missao',{streak:0,ultimoConcluido:null,vistas:[],dias:{}});
+    if(keys.includes(FLASH_KEY))FLASH=ls.get(FLASH_KEY,{});
+    if(keys.includes('cti_2fase'))F2=ls.get('cti_2fase',{});
+    if(keys.includes('cti_doc_treinos'))D2H=ls.get('cti_doc_treinos',[]);
+    if(keys.includes('cti_destaque'))DQ=null;
+    if(keys.includes('cti_cera_v1'))window.CTI_CERA?.reloadFromStorage?.();
+    if(keys.includes('cti_perfil'))aplicarPerfil();
+    if(keys.includes('medquest_theme'))document.documentElement.dataset.theme=ls.get('medquest_theme')==='dark'?'dark':'';
+    atualizarHeader();
+    renderPainel();
+  }
+};
 
 function atualizarHeader(){
   const st = streakAtual();
@@ -1943,7 +1963,7 @@ $('#pnMetasCfg').onclick = () => {
   ls.set('cti_metas', {questoes:Math.max(1, +q || 600), acerto:Math.min(100, Math.max(1, +a || 80)), simulados:Math.max(1, +s || 4)}); renderMetas(); toast('Metas atualizadas!');
 };
 /* ---------- questão em destaque (uma por dia) */
-let DQ = null;
+let DQ = null, destaqueBusy = false;
 async function carregarDestaque(){
   const d = hoje(), salvo = ls.get('cti_destaque', {});
   let id = salvo.data === d ? salvo.id : null;
@@ -1970,13 +1990,16 @@ function renderDestaque(){
   $('#dqCompleta') && ($('#dqCompleta').onclick = verDestaque);
 }
 async function responderDestaque(sel){
-  if (!DQ || DQ.resp) return;
+  if (!DQ || DQ.resp || destaqueBusy) return;
+  destaqueBusy=true;
+  try {
   const r = await post('/api/responder', {question_id:DQ.q.id, selected_option:sel, access_token:DQ.q._access || ''});
   DQ.resp = {sel, acertou:r.is_correct, gab:r.gabarito_oficial, answer_token:r.answer_token || ''}; DQ.exp = r.explicacao_ia || null; if (DQ.exp) iaGuardar(DQ.q.id, DQ.exp);
   registrar(DQ.q, r.is_correct, 'destaque');
   ls.set('cti_destaque', {data:hoje(), id:DQ.q.id, resp:DQ.resp});
   renderPainel();
   if (!DQ.exp){ DQ.exp = await buscarIA(DQ.q.id, DQ.q._access || '', DQ.resp.answer_token || ''); renderDestaque(); }
+  } finally { destaqueBusy=false; }
 }
 function verDestaque(){
   if (!DQ) return;
