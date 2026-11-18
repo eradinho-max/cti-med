@@ -72,6 +72,24 @@ async function browser(initial={}){
  assert.equal(phone.map.get('cti_study_notes_v32'),'{"note":"PC"}');
  assert.equal(phone.reloads(),0);
 
+ // Celular -> computador: anotação, treino e histórico novo.
+ phone.map.set('cti_study_notes_v32',JSON.stringify({note:'PHONE'}));
+ phone.map.set('cti_doc_treinos',JSON.stringify({sessions:['session-phone']}));
+ assert.equal(await phone.sync(),true,'phone must upload study/training');
+ assert.equal(await pc.sync(),true,'PC must receive phone study/training');
+ assert.equal(pc.map.get('cti_study_notes_v32'),JSON.stringify({note:'PHONE'}));
+ assert.equal(pc.map.get('cti_doc_treinos'),JSON.stringify({sessions:['session-phone']}));
+
+ // Reabertura do navegador e nova sessão com o mesmo armazenamento local.
+ // Não simula login real; valida persistência do estado local e do servidor.
+ const reopened=await browser(Object.fromEntries(phone.map));
+ assert.equal(await reopened.sync(),true,'reopened browser sync');
+ assert.equal(reopened.map.get('cti_doc_treinos'),JSON.stringify({sessions:['session-phone']}));
+ const newDevice=await browser();
+ assert.equal(await newDevice.sync(),true,'fresh device after prior sessions');
+ assert.equal(newDevice.map.get('cti_study_notes_v32'),JSON.stringify({note:'PHONE'}));
+ assert.equal(newDevice.map.get('cti_doc_treinos'),JSON.stringify({sessions:['session-phone']}));
+
  pc.map.set('medquest_historico','["q1","q2"]');
  assert.equal(await pc.sync(),true);
  assert.equal(store.progress.version,2);
@@ -130,5 +148,5 @@ async function browser(initial={}){
  assert.equal(await large.sync(),false);
  assert.equal(store.progress.version,saved);
  assert.equal(large.reloads(),0);
- console.log('PASS: boot inert, PC->phone, updates, conflicts, DB failures, 401, bounds, no reload');
+ console.log('PASS: boot inert, PC->phone, phone->PC, reopened browser, new device, updates, conflicts, DB failures, 401, bounds, no reload');
 })().catch(err=>{console.error(err);process.exitCode=1});
