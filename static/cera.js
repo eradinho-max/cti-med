@@ -175,8 +175,15 @@
     if(action==='summary'){if(typeof window.abrirReforco==='function')window.abrirReforco(rec.theme,rec.area);return}
     if(action==='notebook'||action==='flashcards'){
       const dest=$('#mb32NotebookCard');
-      if(dest){dest.scrollIntoView({behavior:'smooth',block:'start'});if(action==='flashcards')dest.querySelector('#mb32ReviewBtn')?.click()}
-      else if(typeof window.toast==='function')window.toast('O Caderno não está disponível nesta sessão.');
+      if(dest){
+        const nav=$('#side [data-v="reforco"]');
+        if(nav)nav.click();
+        else if(typeof mostrar==='function')mostrar('reforco');
+        setTimeout(()=>{
+          dest.scrollIntoView({behavior:'smooth',block:'start'});
+          if(action==='flashcards')dest.querySelector('#mb32ReviewBtn')?.click();
+        },240);
+      } else if(typeof window.toast==='function')window.toast('O Caderno não está disponível nesta sessão.');
       return;
     }
     if(action==='understood'&&rec.stage==='C'){
@@ -190,7 +197,7 @@
     }
     if(action==='train'&&rec.stage==='R'){
       rec.practiceStartedAt=rec.practiceStartedAt||Date.now()-1000;
-      if(setRecord(rec)&&typeof window.treinarArea==='function')window.treinarArea(rec.area,rec.theme);
+      if(setRecord(rec)&&typeof window.treinarArea==='function')window.treinarArea(rec.area,rec.theme,'cera');
       return;
     }
     if(action==='resolved'&&rec.stage==='R'){
@@ -223,33 +230,18 @@
     }
   }
   function open(){
-    const nav=$('#side [data-v="reforco"]')||$('#sheet [data-go="reforco"]');
+    const nav=$('#side [data-v="cera"]');
     if(nav)nav.click();
-    else if(typeof mostrar==='function')mostrar('reforco');
-    setTimeout(()=>{$('#ctiCeraHub')?.scrollIntoView({behavior:'smooth',block:'start'});render()},210);
+    else if(typeof mostrar==='function')mostrar('cera');
   }
   function mount(){
-    if(!$('#view-reforco')||$('#ctiCeraHub'))return;
-    const anchor=$('#mb32Hub')||$('#rTemas');
-    if(!anchor)return;
-    const section=document.createElement('section');
-    section.id='ctiCeraHub';section.className='card cera-card';
-    anchor.parentNode.insertBefore(section,anchor);
-    const side=$('#side [data-v="reforco"]');
-    if(side&&!$('#ctiCeraSide')){
-      const b=document.createElement('button');b.id='ctiCeraSide';b.type='button';b.innerHTML='<span aria-hidden="true">◉</span> Método CERA';b.onclick=open;
-      side.insertAdjacentElement('afterend',b);
-    }
-    const sheet=$('#sheet [data-go="reforco"]');
-    if(sheet&&!$('#ctiCeraSheet')){
-      const b=document.createElement('button');b.id='ctiCeraSheet';b.type='button';b.className='it';b.textContent='Método CERA · Aprendizagem Ativa';b.onclick=()=>{$('#sheet')?.classList.remove('on');open()};
-      sheet.insertAdjacentElement('afterend',b);
-    }
-    document.addEventListener('click',e=>{
-      if(e.target.closest('[data-v="reforco"],[data-go="reforco"]'))setTimeout(render,180);
-    },true);
-    window.addEventListener('focus',()=>{if($('#view-reforco')?.classList.contains('on'))render()});
-    window.CTI_CERA={open,summary:()=>stats()};
+    if(!$('#view-cera')||!$('#ctiCeraHub'))return;
+    // A página e seus botões de navegação já pertencem ao HTML.
+    // Não injetar outro painel dentro de Trilhas de Estudo.
+    window.CTI_CERA={open,refresh:render,summary:()=>stats()};
+    window.addEventListener('focus',()=>{
+      if($('#view-cera')?.classList.contains('on'))render();
+    });
     render();
   }
   function init(){
