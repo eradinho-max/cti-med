@@ -63,34 +63,37 @@ class SyncStore:
     def put(self,user_id:str,data:Dict[str,Any],base_version:Optional[int],namespace:str="study")->dict:
         try:
             from psycopg.types.json import Jsonb
-            with self._connect() as conn, conn.cursor() as cur:
-                cur.execute("""SELECT version FROM cti_user_state
-                               WHERE user_id=%s AND namespace=%s FOR UPDATE""",(user_id,namespace))
-                row=cur.fetchone()
-                if not row:
-                    if base_version not in (None,0):
-                        raise SyncConflict({"namespace":namespace,"data":{},"version":0,"updated_at":None})
+            with self._connect() as conn:
+                conn.autocommit=False
+                with conn.cursor() as cur:
+                    # Atomic compare-and-swap, including concurrent first writes.
                     cur.execute("""INSERT INTO cti_user_state(user_id,namespace,data,version,updated_at)
                                    VALUES (%s,%s,%s,1,now())
+                                   ON CONFLICT (user_id,namespace) DO NOTHING
                                    RETURNING data,version,updated_at""",
+                                (user_id,namespace,Jsonb(data)) if base_version in (None,0) else
                                 (user_id,namespace,Jsonb(data)))
-                    out=cur.fetchone()
-                else:
+                    created=cur.fetchone()
+                    if created:
+                        if base_version not in (None,0):
+                            raise SyncConflict({"namespace":namespace,"data":{},"version":0,"updated_at":None})
+                        return {"namespace":namespace,"data":created["data"] or {},
+                                "version":int(created["version"]),"updated_at":created["updated_at"]}
+                    cur.execute("""SELECT data,version,updated_at FROM cti_user_state
+                                   WHERE user_id=%s AND namespace=%s FOR UPDATE""",(user_id,namespace))
+                    row=cur.fetchone()
                     current=int(row["version"])
                     if base_version is None or int(base_version)!=current:
-                        cur.execute("""SELECT data,version,updated_at FROM cti_user_state
-                                       WHERE user_id=%s AND namespace=%s""",(user_id,namespace))
-                        now=cur.fetchone()
-                        raise SyncConflict({"namespace":namespace,"data":now["data"] or {},
-                                            "version":int(now["version"]),"updated_at":now["updated_at"]})
+                        raise SyncConflict({"namespace":namespace,"data":row["data"] or {},
+                                            "version":current,"updated_at":row["updated_at"]})
                     cur.execute("""UPDATE cti_user_state
                                    SET data=%s,version=version+1,updated_at=now()
                                    WHERE user_id=%s AND namespace=%s
                                    RETURNING data,version,updated_at""",
                                 (Jsonb(data),user_id,namespace))
                     out=cur.fetchone()
-            return {"namespace":namespace,"data":out["data"] or {},
-                    "version":int(out["version"]),"updated_at":out["updated_at"]}
+                    return {"namespace":namespace,"data":out["data"] or {},
+                            "version":int(out["version"]),"updated_at":out["updated_at"]}
         except SyncConflict: raise
         except SyncStoreError: raise
         except Exception as exc: raise SyncStoreError("Falha ao salvar sincronização") from exc
