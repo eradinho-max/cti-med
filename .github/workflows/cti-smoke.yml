@@ -134,6 +134,18 @@ jobs:
           assert c.get("/api/admin/users/status").status_code==200
           print("PASS authenticated session/admin while sync database is unavailable")
           PY
+      - name: Dedicated sync database guard
+        run: |
+          python - <<'PY'
+          import os
+          from sync_store import SyncStore
+          os.environ.pop("CTI_SYNC_DATABASE_URL", None)
+          os.environ["CTI_DATABASE_URL"] = "postgresql://must-not-be-used-for-sync"
+          assert SyncStore().configured is False
+          os.environ["CTI_SYNC_DATABASE_URL"] = "postgresql://sync-only"
+          assert SyncStore().configured is True
+          print("PASS: sync database requires dedicated variable")
+          PY
       - name: Two-device sync regression (Node VM)
         run: node tests/sync-regression.cjs
       - name: Sync safety guards
