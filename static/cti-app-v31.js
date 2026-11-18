@@ -579,7 +579,9 @@ $('#qzSair').onclick = () => {
   const destino = S?._origem || 'painel', plannerDay = S?.plannerDay || '';
   clearInterval(timerH);
   S = null;
-  if (history.state?.cti && history.state.view === 'quiz' && history.length > 1) history.back();
+  // O treino acionado pelo CERA deve retornar ao método, não ao formulário de simulados.
+  if (destino === 'cera') mostrar('cera', {substituir:true});
+  else if (history.state?.cti && history.state.view === 'quiz' && history.length > 1) history.back();
   else mostrar(destino, {substituir:true});
   if (plannerDay) { setTimeout(() => { if (viewAtual() !== 'reforco') mostrar('reforco'); plannerScrollDia(plannerDay); }, 180); }
 };
