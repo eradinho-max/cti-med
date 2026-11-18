@@ -220,11 +220,33 @@ async function init(){
   if (ls.get('medquest_theme') === 'dark') document.documentElement.dataset.theme = 'dark';
   const alternaTema = () => { const d = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = d ? '' : 'dark'; ls.set('medquest_theme', d ? 'light' : 'dark'); $('#sheet').classList.remove('on'); if ($('#view-painel').classList.contains('on')) renderPainel(); };
   $('#btnTema').onclick = alternaTema; $('#shTema').onclick = alternaTema;
-  const sairSessao = async () => {
-    if (!confirm('Sair da sessão do CTi? Seu progresso local será preservado.')) return;
-    try { await post('/api/auth/logout', {}); } catch {}
-    try { navigator.serviceWorker?.controller?.postMessage({type:'CLEAR_PRIVATE'}); } catch {}
-    location.replace('/');
+  let logoutBusy = false;
+  const sairSessao = () => {
+    if (logoutBusy || document.getElementById('ctiLogoutDialog')) return;
+    const d = document.createElement('dialog');
+    d.id = 'ctiLogoutDialog'; d.className = 'admin-dialog';
+    d.innerHTML = '<div class="sec-t">Sair da sessão</div><p>Seu progresso local será preservado.</p><p role="status" data-logout-status></p><div class="row"><button type="button" class="btn sec" data-logout-cancel>Cancelar</button><button type="button" class="btn" data-logout-confirm>Sair</button></div>';
+    document.body.appendChild(d);
+    const cancel = d.querySelector('[data-logout-cancel]'), ok = d.querySelector('[data-logout-confirm]'), status = d.querySelector('[data-logout-status]');
+    d.addEventListener('close', () => d.remove(), {once:true});
+    d.addEventListener('cancel', e => { if (logoutBusy) e.preventDefault(); });
+    cancel.onclick = () => d.close();
+    ok.onclick = async () => {
+      if (logoutBusy) return;
+      logoutBusy = true; ok.disabled = cancel.disabled = true; status.textContent = 'Encerrando sessão…';
+      try {
+        const response = await api('/api/auth/logout', {method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':decodeURIComponent(cookieVal('cti_csrf'))},body:'{}',timeoutMs:8000});
+        if (!response?.ok) throw new Error('O servidor não confirmou a saída.');
+        const state = await api('/api/auth/status', {timeoutMs:8000});
+        if (state.required && state.authenticated) throw new Error('A sessão continua ativa. Tente novamente.');
+        try { navigator.serviceWorker?.controller?.postMessage({type:'CLEAR_PRIVATE'}); } catch {}
+        location.replace('/?reason=logout');
+      } catch (e) {
+        status.textContent = 'Não foi possível confirmar a saída. Verifique a conexão e tente novamente. Seu progresso foi preservado.';
+        logoutBusy = false; ok.disabled = cancel.disabled = false;
+      }
+    };
+    d.showModal();
   };
   $('#btnLogout').onclick = sairSessao; $('#shLogout').onclick = () => { $('#sheet').classList.remove('on'); sairSessao(); };
   $$('#tabs button, #side button[data-v], #bnav button[data-v]').forEach(b => b.onclick = () => b.dataset.v === 'mais' ? $('#sheet').classList.add('on') : mostrar(b.dataset.v));
