@@ -191,7 +191,8 @@ jobs:
           assert "location.reload()" not in js
           assert "setInterval(" not in js
           assert "addEventListener('focus'" not in js
-          assert "visibilitychange" not in js
+          assert "visibilitychange" in js and "AUTO_MIN=30000" in js and "AUTO_RETRY=120000" in js
+          assert "sync_auto_available===true" in js and "autoPaused" in js
           assert "MAX_REQUEST_BYTES" in js and "MAX_KEY_CHARS" in js
           assert "changedLocal&&changedRemote&&!same" in js
           assert "cti_sync_meta_safe_v2" in js
