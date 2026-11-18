@@ -136,6 +136,39 @@ jobs:
           assert c.get("/api/admin/users/status").status_code==200
           print("PASS authenticated session/admin while sync database is unavailable")
           PY
+      - name: Secure cookie logout navigation regression
+        env:
+          CTI_ENV: "production"
+          CTI_REQUIRE_AUTH: "1"
+          CTI_AUTH_BACKEND: "env"
+          CTI_ACCESS_USERNAME: "test-admin"
+          CTI_ACCESS_PASSWORD: "Not-A-Real-Credential-123"
+          CTI_SESSION_SECRET: "Not-A-Real-Session-Secret-456"
+          CTI_SYNC_ENABLED: "0"
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+          import main
+          c=TestClient(main.app,base_url="https://testserver")
+          credentials={"username":"test-admin","password":"Not-A-Real-Credential-123"}
+          assert c.post("/api/auth/login",json=credentials).status_code==200
+          assert c.get("/api/auth/status").json()["authenticated"] is True
+          csrf=c.cookies.get("cti_csrf")
+          assert csrf
+          assert c.post("/api/auth/logout-page",data={"csrf":"invalid"},follow_redirects=False).status_code==403
+          assert c.get("/api/auth/status").json()["authenticated"] is True
+          r=c.post("/api/auth/logout-page",data={"csrf":csrf},follow_redirects=False)
+          assert r.status_code==303, r.text
+          assert r.headers["location"]=="/?reason=logout"
+          cookies=r.headers.get_list("set-cookie")
+          assert any("__Host-cti_session=" in x and "Max-Age=0" in x and "Secure" in x and "HttpOnly" in x for x in cookies), cookies
+          assert c.get("/api/auth/status").json()["authenticated"] is False
+          assert c.get("/api/stats").status_code==401
+          assert c.get(r.headers["location"]).status_code==200
+          assert c.post("/api/auth/login",json=credentials).status_code==200
+          assert c.get("/api/auth/status").json()["authenticated"] is True
+          print("PASS: secure logout, invalid CSRF rejected, protected data inaccessible, re-login")
+          PY
       - name: Dedicated sync database guard
         run: |
           python - <<'PY'
