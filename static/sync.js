@@ -176,7 +176,7 @@
     if(!STATE.available)return 'Sincronização ainda não disponível';
     if(!navigator.onLine)return 'Offline · alterações serão sincronizadas ao reconectar';
     if(STATE.busy)return 'Sincronizando…';
-    if(STATE.error)return 'Sincronização pendente';
+    if(STATE.error)return 'Sincronização pendente · '+STATE.error;
     if(STATE.received)return 'Dados recebidos · atualize a página para visualizá-los';
     if(STATE.last)return 'Sincronizado · '+new Date(STATE.last).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     return 'Pronto para sincronizar';
