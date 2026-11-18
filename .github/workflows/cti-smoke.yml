@@ -41,6 +41,7 @@ jobs:
           node --check static/kotu.js
           node --check static/sync.js
           node --check static/sw.js
+          node --check static/pwa.js
       - name: Auth and sync decoupling
         run: |
           python - <<'PY'
@@ -220,9 +221,33 @@ jobs:
           assert 'rel="manifest"' in html
           assert 'viewport-fit=cover' in html
           assert 'apple-mobile-web-app-capable' in html
+          login=Path("static/login.html").read_text()
+          for page in (html,login):
+              assert 'rel="manifest" href="/static/manifest.json"' in page
+              assert 'apple-touch-icon' in page and '/static/pwa.js' in page
+              assert 'data-pwa-install' in page
+          from struct import unpack
+          for icon in icons:
+              if icon["type"]=="image/png":
+                  asset=Path(icon["src"].lstrip("/")).read_bytes()
+                  assert asset[:8]==b"\x89PNG\r\n\x1a\n"
+                  w,h=unpack(">II",asset[16:24])
+                  assert f"{w}x{h}"==icon["sizes"]
+          pwa=Path("static/pwa.js").read_text()
+          assert "beforeinstallprompt" in pwa and "register('/sw.js'" in pwa
+          from fastapi.testclient import TestClient
+          import main
+          client=TestClient(main.app)
+          response=client.get("/static/manifest.json")
+          assert response.status_code==200 and "application/manifest+json" in response.headers["content-type"]
+          response=client.get("/sw.js")
+          assert response.status_code==200 and response.headers["service-worker-allowed"]=="/"
+          for icon in icons:
+              assert client.get(icon["src"]).status_code==200
           sw=Path("static/sw.js").read_text()
           assert "serviceWorker" not in sw or "fetch" in sw
-          assert "/static/offline.html" in sw
+          assert "/static/offline.html" in sw and "Promise.allSettled" in sw
+          assert "cache.addAll" not in sw
           assert "/static/cera.js" in Path("static/app.js").read_text()
           assert "/static/cera.css" in Path("static/app.css").read_text()
           assert "cti_cera_v1" in Path("static/sync.js").read_text()
