@@ -5,13 +5,14 @@ import re
 import logging
 from datetime import date
 from typing import Dict, List, Optional
+from urllib.parse import parse_qs
 
 import time
 from collections import defaultdict, deque
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -134,11 +135,11 @@ def _admin(request: Request) -> UserIdentity:
     return u
 
 
-def _csrf_ok(request: Request) -> bool:
+def _csrf_ok(request: Request, form_token: Optional[str] = None) -> bool:
     session_token = request.cookies.get(SESSIONS.cookie_name)
     expected = SESSIONS.csrf_for_session(session_token)
     cookie = request.cookies.get(SESSIONS.csrf_cookie_name)
-    header = request.headers.get("x-csrf-token")
+    header = form_token if form_token is not None else request.headers.get("x-csrf-token")
     return bool(expected and cookie and header and hmac_compare(expected, cookie) and hmac_compare(expected, header))
 
 
@@ -198,7 +199,19 @@ async def seguranca(request: Request, call_next):
     # Double-submit + token ligado à sessão. Login e recuperação são as únicas
     # mutações públicas sem sessão prévia.
     if AUTH_REQUIRED and user and request.method in ("POST", "PUT", "PATCH", "DELETE") and path not in ("/api/auth/login", "/api/auth/recover"):
-        if not _csrf_ok(request):
+        form_token = None
+        if path == "/api/auth/logout-page" and request.method == "POST":
+            # Browser navigation fallback; the same session-bound double-submit CSRF applies.
+            if request.headers.get("content-type", "").split(";")[0].strip().lower() == "application/x-www-form-urlencoded":
+                body = await request.body()
+                if len(body) <= 2048:
+                    try:
+                        form_token = parse_qs(body.decode("utf-8"), max_num_fields=4).get("csrf", [""])[0]
+                    except (UnicodeError, ValueError):
+                        form_token = ""
+            if form_token is None:
+                form_token = ""
+        if not _csrf_ok(request, form_token):
             _audit("csrf_block", request, user)
             return JSONResponse({"detail": "Solicitação inválida."}, status_code=403,
                                 headers={"Cache-Control": "no-store"})
@@ -355,7 +368,15 @@ def auth_logout(request: Request):
     _audit("logout", request, _user(request))
     resp = JSONResponse({"ok": True})
     SESSIONS.clear_cookie(resp)
-    resp.headers["Clear-Site-Data"] = '"cache"'
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.post("/api/auth/logout-page")
+def auth_logout_page(request: Request):
+    _audit("logout_navigation", request, _user(request))
+    resp = RedirectResponse(url="/?reason=logout", status_code=303)
+    SESSIONS.clear_cookie(resp)
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
