@@ -43,6 +43,7 @@ class AICacheStore:
         self.enabled = (enabled if enabled is not None else
                         os.getenv("CTI_AI_CACHE_ENABLED", "0").lower() in ("1", "true", "yes", "on"))
         self.ready = bool(self.enabled and self.url)
+        self.failure = False
 
     def _connection(self):
         import psycopg
@@ -62,6 +63,7 @@ class AICacheStore:
                 row = cur.fetchone()
                 return row["payload"] if row and isinstance(row["payload"], dict) else None
         except Exception:
+            self.failure = True
             return None
 
     def claim(self, key: str, digest: str, kind: str, scope: str = "shared",
@@ -108,6 +110,7 @@ class AICacheStore:
                              token, PENDING_SECONDS))
                 return Lease(key, token, int(slot["slot_id"]))
         except Exception:
+            self.failure = True
             return None
 
     def finish(self, lease: Lease, payload: Optional[dict], scope: str,
@@ -182,6 +185,8 @@ def get_or_generate(*, key: str, digest: str, kind: str, generator: Callable[[],
         return hit
     lease = cache.claim(key, digest, kind, scope, owner)
     if lease is None:
+        if cache.failure:
+            return generator()
         return cache.wait_ready(key, scope, owner, seconds=wait_seconds)
     result = None
     try:
