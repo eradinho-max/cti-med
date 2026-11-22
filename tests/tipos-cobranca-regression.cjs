@@ -28,6 +28,8 @@ assert.equal(co.taxonomy.types.length,0);
 const source=fs.readFileSync('static/inteligencia.js','utf8');
 assert.ok(source.includes("['tipos','Como a banca cobra']"));
 assert.ok(source.includes('Não validada'));
+assert.ok(source.includes('Distribuição ocultada para evitar interpretação indevida'));
+assert.ok(source.includes('sufficient&&t.types.length'));
 assert.ok(source.includes('Nenhum desses rótulos altera'));
 const indexMain=fs.readFileSync('main.py','utf8');
 assert.ok(indexMain.includes('\"cobranca\": TIPOS_COBRANCA.get'));
