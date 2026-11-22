@@ -38,6 +38,7 @@
       t.uniqueDone++;if(last.correct)t.correct++;
     }
     for(const [k,n] of attemptsByTheme){const t=byTheme.get(k);if(t)t.attempts=n;}
+    const selectedArea=byArea.has(areaFilter)?areaFilter:'';
     const competenceCounts=new Map();
     for(const q of base){
       const label=txt(q.cobranca);
@@ -69,7 +70,7 @@
         sharedThemes:shared,comparableThemes:union,questions:p.n,editions:p.editions.size};
     }).sort((a,b)=>b.score-a.score||a.exam.localeCompare(b.exam,'pt-BR'));
     const areas=[...byArea.values()].map(a=>({area:a.area,n:a.n,pct:rate(a.n,base.length),editions:a.editions.size})).sort((a,b)=>b.n-a.n||a.area.localeCompare(b.area,'pt-BR'));
-    const selectedArea=byArea.has(areaFilter)?areaFilter:'';
+
     const classificationCounts=new Map();
     let classified=0,undetermined=0;
     for(const q of base){
