@@ -85,7 +85,7 @@
       '<div class="cti-int-kpi"><span class="small muted">Cobertura da triagem</span><strong>'+percent(t.coveragePct)+'</strong></div>'+
       '<div class="cti-int-kpi"><span class="small muted">Confiabilidade para orientar estudo</span><strong>Não validada</strong></div></div>'+
       (!sufficient?'<p class="small muted"><b>Leitura restrita:</b> a cobertura textual é insuficiente para interpretar a distribuição como perfil de cobrança da prova.</p>':'<p class="small muted"><b>Leitura exploratória:</b> a cobertura é suficiente para mostrar a distribuição dos rótulos provisórios, mas exige revisão humana para orientar prioridades individuais.</p>')+
-      (t.types.length?t.types.map(x=>bar(x.label,x.pctClassified,num(x.n)+' rótulos · '+percent(x.pctTotal)+' do acervo analisado')).join(''):'<p class="small muted">Não há rótulos definidos neste filtro.</p>')+
+      (sufficient&&t.types.length?t.types.map(x=>bar(x.label,x.pctClassified,num(x.n)+' rótulos · '+percent(x.pctTotal)+' do acervo analisado')).join(''):!sufficient?'<p class="small muted">Distribuição ocultada para evitar interpretação indevida de uma amostra de baixa cobertura.</p>':'<p class="small muted">Não há rótulos definidos neste filtro.</p>')+
       '<p class="small muted">Os percentuais das barras são calculados sobre as questões classificadas, não sobre todas as questões. Nenhum desses rótulos altera o cálculo de prioridade, o CERA ou os simulados.</p></div>';
   }
   function changes(d){
