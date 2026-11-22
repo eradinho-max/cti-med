@@ -18,7 +18,7 @@
   let autoTimer=null, autoDue=0, lastAttempt=0, autoPaused=false, retryAfter=0, queuedDelay=null;
   const AUTO_MIN=5000, AUTO_NEXT=15000, AUTO_RETRY=120000, AUTO_WRITE=1000;
   const SYNC_KEYS=new Set(Object.values(GROUPS).flat());
-  const canReceive=()=>!STATE.automatic||window.CTI_SYNC_VIEW?.canReceive?.()===true;
+  const canReceive=()=>window.CTI_SYNC_VIEW?.canReceive?.()===true;
   const MAX_KEY_CHARS=350000;
   const MAX_REQUEST_BYTES=800000;
   const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -111,6 +111,37 @@
     }
   }
 
+  // Apenas históricos de tentativas: unir registros imutáveis de dois aparelhos.
+  // Não aplica a progresso editável, missões, flashcards, notas ou respostas ativas.
+  // Conflitos reais (mesmo evento com conteúdos distintos) permanecem bloqueados.
+  function mergeAttempts(key,localRaw,remoteRaw){
+    if(key!=='medquest_historico'||localRaw===null||remoteRaw===null)return null;
+    let a,b;
+    try{a=JSON.parse(localRaw);b=JSON.parse(remoteRaw)}catch{return null}
+    if(!Array.isArray(a)||!Array.isArray(b)||!a.length||!b.length)return null;
+    if(a.length>20000||b.length>20000)return null;
+    const idOf=item=>{
+      if(!item||typeof item!=='object'||Array.isArray(item)||
+         !Number.isFinite(Number(item.ts))||Number(item.ts)<=0||
+         !Number.isFinite(Number(item.id))||Number(item.id)<=0)return null;
+      return [String(item.id),String(item.ts),String(item.origem||'')].join(':');
+    };
+    const byEvent=new Map(),all=[];
+    for(const x of b.concat(a)){
+      const id=idOf(x);if(!id)return null;
+      const prior=byEvent.get(id);
+      if(prior!==undefined){
+        // Eventos iguais podem ser enviados pelos dois dispositivos.
+        if(JSON.stringify(prior)!==JSON.stringify(x))return null;
+      }else{byEvent.set(id,x);all.push(x)}
+    }
+    // Não ressuscitar dados após limpeza nem truncar histórico silenciosamente.
+    if(all.length>20000)return null;
+    all.sort((x,y)=>Number(x.ts)-Number(y.ts)||Number(x.id)-Number(y.id));
+    const raw=JSON.stringify(all);
+    return raw.length<=MAX_KEY_CHARS?raw:null;
+  }
+
   function plan(ns,local,remote,previous){
     const data=normalized(remote);
     const received=[];
@@ -138,7 +169,12 @@
         &&bootstrapGeneratedKey(ns,key,localRaw,remoteRaw)){
         received.push({key,raw:remoteRaw,backupRaw:localRaw});
       }else if(changedLocal&&changedRemote&&!same){
-        conflicts.push(key);
+        const merged=mergeAttempts(key,localRaw,remoteRaw);
+        if(merged!==null){
+          data.items[key]={raw:merged,modified:now()};
+          changedServer=true;
+          received.push({key,raw:merged,backupRaw:localRaw});
+        }else conflicts.push(key);
       }else if(changedLocal&&!same){
         data.items[key]={raw:localRaw,modified:now()};
         changedServer=true;
@@ -148,10 +184,7 @@
         conflicts.push(key);
       }
     }
-    if(conflicts.length){
-      throw new Error('Conflito em '+ns+' ('+conflicts.join(', ')+'). Nenhum dado foi sobrescrito. Use o dispositivo com o histórico mais completo.');
-    }
-    return {data,received,changedServer};
+    return {data,received,changedServer,conflicts};
   }
 
   async function syncNamespace(ns,meta){
@@ -159,8 +192,9 @@
     const local=await capture(ns);
     const previous=meta.namespaces[ns]||{initialized:false,version:0,seen:{}};
     const p=plan(ns,local,remote,previous);
-    if(p.received.length&&!canReceive())return {deferred:true,received:false};
-    backupBootstrapValues(ns,p.received);
+    // Mesmo com tela ativa, enviar mudanças locais independentes é seguro.
+    // O recebimento continua bloqueado até a tela estar segura.
+    if(p.received.length&&canReceive())backupBootstrapValues(ns,p.received);
     let version=Number(remote.version||0);
     if(p.changedServer){
       const body=JSON.stringify({namespace:ns,base_version:version,data:p.data});
@@ -176,12 +210,12 @@
     if(p.received.length&&(!canReceive()||p.received.some(item=>localStorage.getItem(item.key)!==local[item.key]))){
       // If PUT succeeded, advance only the confirmed keys; pending downloads keep their old baseline.
       if(p.changedServer){
-        const pending=new Set(p.received.map(item=>item.key));
+        const pending=new Set(p.received.map(item=>item.key).concat(p.conflicts));
         const seen=Object.assign({},previous.seen||{});
         for(const key of GROUPS[ns])if(!pending.has(key))seen[key]=fnv(local[key]);
         meta.namespaces[ns]={initialized:true,version,seen};saveMeta(meta);
       }
-      return {deferred:true,received:false};
+      return {deferred:true,received:false,conflicts:p.conflicts.map(key=>ns+': '+key)};
     }
     // Atualização local e memória no mesmo turno; não ceder entre registros recebidos.
     for(const item of p.received){
@@ -190,14 +224,20 @@
       local[item.key]=item.raw;
     }
     if(STATE.automatic&&p.received.length)window.CTI_SYNC_VIEW.apply(p.received.map(item=>item.key));
-    const seen={};
+    const seen=Object.assign({},previous.seen||{});
     for(const key of GROUPS[ns]){
       await pause();
-      seen[key]=fnv(local[key]);
+      if(p.conflicts.includes(key)){
+        // Preservar o baseline anterior: nunca marcar divergência como resolvida.
+        delete seen[key];
+      }else{
+        seen[key]=fnv(local[key]);
+      }
     }
     meta.namespaces[ns]={initialized:true,version,seen};
     saveMeta(meta);
-    return {received:p.received.length>0,deferred:false};
+    return {received:p.received.length>0,deferred:false,
+            conflicts:p.conflicts.map(key=>ns+': '+key)};
   }
 
   function cancelAuto(){
@@ -229,20 +269,28 @@
     lastAttempt=now();
     STATE.busy=true;STATE.error='';STATE.deferred=false;renderStatus();
     let received=false;
-    const meta=getMeta();
+    const meta=getMeta(),problems=[];
     try{
       for(const ns of Object.keys(GROUPS)){
-        const result=await syncNamespace(ns,meta);
-        received=result.received||received;
-        STATE.deferred=result.deferred||STATE.deferred;
+        try{
+          const result=await syncNamespace(ns,meta);
+          received=result.received||received;
+          STATE.deferred=result.deferred||STATE.deferred;
+          if(result.conflicts?.length)problems.push('Conflito em '+result.conflicts.join(', '));
+        }catch(e){
+          problems.push(e.message||'Falha de sincronização em '+ns);
+          if(e.status===401){autoPaused=true;break}
+          if(/^O estado remoto foi reiniciado/.test(e.message||'')){autoPaused=true;break}
+        }
       }
-      if(!STATE.deferred){meta.lastSync=now();saveMeta(meta);STATE.last=meta.lastSync;}
+      if(!problems.length&&!STATE.deferred){meta.lastSync=now();saveMeta(meta);STATE.last=meta.lastSync;}
       STATE.received=received&&!STATE.automatic;
-      retryAfter=0;
+      STATE.error=problems.join(' · ').slice(0,450);
+      retryAfter=problems.length?now()+AUTO_RETRY:0;
       if(manual&&typeof window.toast==='function'){
-        window.toast(STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.');
+        window.toast(STATE.error|| (STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.'));
       }
-      return true;
+      return !problems.length;
     }catch(e){
       STATE.error=e.message||'Sincronização indisponível.';
       retryAfter=now()+AUTO_RETRY;
