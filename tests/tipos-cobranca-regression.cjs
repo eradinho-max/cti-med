@@ -43,16 +43,17 @@ const extended=items.slice(0,4);
 extended.push(
  {id:7,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'},
  {id:8,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'},
- {id:9,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'}
+ {id:9,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'},
+ {id:10,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'}
 );
-const extendedHist=[{id:1,acertou:false,ts:1},{id:2,acertou:true,ts:2},{id:7,acertou:false,ts:3},{id:8,acertou:false,ts:4},{id:9,acertou:false,ts:5}];
+const extendedHist=[{id:1,acertou:false,ts:1},{id:2,acertou:true,ts:2},{id:7,acertou:false,ts:3},{id:8,acertou:false,ts:4},{id:9,acertou:false,ts:5},{id:10,acertou:false,ts:6}];
 const e=core.analyze(extended,extendedHist,'Revalida INEP','Clínica');
 const tr=e.themes.find(t=>t.theme==='Diabetes');
 assert.ok(tr.weakCompetence==='Tratamento e conduta');
 assert.ok(tr.next.includes('tratamento e conduta'));
 assert.equal(tr.difficulty,'Alta dificuldade individual');
 const treatment=e.taxonomy.competencies.find(x=>x.label==='Tratamento e conduta');
-assert.equal(treatment.done,4);
+assert.equal(treatment.done,5);
 assert.equal(treatment.correct,0);
 assert.equal(treatment.difficulty,'Maior dificuldade');
 const indexMain=fs.readFileSync('main.py','utf8');
