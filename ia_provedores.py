@@ -417,6 +417,17 @@ if _nkey:
             tipo="nvidia", temperature=0.2, timeout=38
         ))
 
+_groq_key = _env("CTI_GROQ_API_KEY", "GROQ_API_KEY")
+if _groq_key:
+    # Segundo provedor independente. Nunca cobra sem chave disponibilizada pelo operador.
+    PROVEDORES.append(Provedor(
+        "Groq/Reserva",
+        "https://api.groq.com/openai/v1",
+        _groq_key,
+        _env("CTI_GROQ_MODEL", padrao="openai/gpt-oss-120b"),
+        tipo="groq", temperature=0.2, timeout=30
+    ))
+
 _lkey = _env("CTI_LLM_API_KEY", "MEDQUEST_LLM_API_KEY", "OPENAI_API_KEY")
 if _lkey:
     PROVEDORES.append(Provedor(
@@ -507,9 +518,13 @@ def gerar(q: dict):
         {"role": "user", "content": INSTRUCOES + fmt_questao(q)},
     ]
     motivos = []
+    deadline = time.monotonic() + 40
 
     tem_alternativa = sum(1 for p in PROVEDORES if p.disponivel()) > 1
     for p in PROVEDORES:
+        if time.monotonic() >= deadline - 3:
+            motivos.append("tempo total de geração esgotado")
+            break
         if not p.disponivel():
             motivos.append(f"{p.nome}: pausado ({p.ultimo_erro})")
             continue
@@ -531,8 +546,9 @@ def gerar(q: dict):
                         "Não invente doses ou referências. O gabarito oficial não pode ser alterado."
                     )
                 }]
+                remaining = max(3, deadline - time.monotonic() - 2)
                 resp = p.chamar(pedido, max_tokens=6500 if tentativa else 6000,
-                                timeout=min(p.timeout, 29 if tem_alternativa else 38))
+                                timeout=min(p.timeout, 18 if tem_alternativa else 35, remaining))
                 if isinstance(resp, dict):
                     itens = resp.get("itens", [resp])
                 elif isinstance(resp, list):
@@ -1375,14 +1391,20 @@ def status() -> dict:
 def _cadeia(msgs, aceitar, contexto="ia", max_tokens=4096):
     """Pipeline genérico do Kotu sobre os provedores já usados pelo CTi."""
     motivos = []
+    deadline = time.monotonic() + 40
     tem_alternativa = sum(1 for p in PROVEDORES if p.disponivel()) > 1
     for p in PROVEDORES:
+        if time.monotonic() >= deadline - 3:
+            motivos.append("tempo total de geração esgotado")
+            break
         if not p.disponivel():
             motivos.append(f"{p.nome}: pausado")
             continue
         for tentativa in range(1 if tem_alternativa else 2):
             try:
-                resp = p.chamar(msgs, max_tokens=max_tokens, timeout=min(p.timeout, 24 if tem_alternativa else 38),
+                remaining = max(3, deadline - time.monotonic() - 2)
+                resp = p.chamar(msgs, max_tokens=max_tokens,
+                               timeout=min(p.timeout, 18 if tem_alternativa else 35, remaining),
                                allow_text=contexto=="kotu")
                 item = aceitar(resp)
                 if item:
