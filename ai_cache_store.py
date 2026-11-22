@@ -189,7 +189,8 @@ def get_or_generate(*, key: str, digest: str, kind: str, generator: Callable[[],
     if lease is None:
         if cache.failure:
             return generator()
-        return cache.wait_ready(key, scope, owner, seconds=wait_seconds)
+        waited = cache.wait_ready(key, scope, owner, seconds=wait_seconds)
+        return waited if isinstance(waited, dict) and validator(waited) else None
     result = None
     try:
         result = generator()
