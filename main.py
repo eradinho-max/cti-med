@@ -280,6 +280,11 @@ for _a in TEMAS:
 
 # pool para missões / treino: válidas e sem duplicatas (Revalida 2026.2 = ENAMED 2026)
 POOL = [q for q in ALL_QUESTIONS if q["valida"] and not q.get("duplicata_de")]
+
+# Metadados analíticos de leitura: não alteram gabaritos, seleção de questões ou correção.
+from exam_taxonomy import classify_question, VERSION as TAXONOMY_VERSION
+TIPOS_COBRANCA = {q["id"]: classify_question(q) for q in POOL}
+
 # questões que dependem de imagem ausente ficam fora da missão e dos simulados pontuados (continuam no banco, com aviso)
 POOL_SEM_IMG = [q for q in POOL if not q["tem_imagem"]]
 MAX_IDS = 200
@@ -801,7 +806,11 @@ def indice():
     """Índice leve (sem textos) – usado pelo painel de desempenho e pelo planner."""
     return [{"id": q["id"], "exame": q["exame"], "edicao": q["edicao"], "numero": q["numero"],
              "area": q["especialidade"], "tema": q["tema"], "valida": q["valida"],
-             "dup": q.get("duplicata_de"), "img": q["tem_imagem"]} for q in ALL_QUESTIONS]
+             "dup": q.get("duplicata_de"), "img": q["tem_imagem"],
+             "cobranca": TIPOS_COBRANCA.get(q["id"], {}).get("tipo", "Não classificada"),
+             "cobranca_origem": TAXONOMY_VERSION,
+             "cobranca_regra": TIPOS_COBRANCA.get(q["id"], {}).get("regra", "nao_elegivel")}
+            for q in ALL_QUESTIONS]
 
 
 @app.get("/api/questoes")
