@@ -408,7 +408,7 @@ if _nkey:
     # de respostas incompletas/erros de um modelo. Não é outro provedor;
     # cotas e indisponibilidades da NVIDIA continuam compartilhadas.
     _nvidia_primary = _env("CTI_NVIDIA_MODEL", padrao="nvidia/nemotron-3.5-lightning-30b-a3b")
-    _nvidia_backup = _env("CTI_NVIDIA_FALLBACK_MODEL", padrao="meta/llama-3.3-70b-instruct").strip()
+    _nvidia_backup = _env("CTI_NVIDIA_FALLBACK_MODEL", padrao="nvidia/nemotron-3.5-super-vl-120b-a12b").strip()
     if _nvidia_backup and _nvidia_backup != _nvidia_primary:
         PROVEDORES.append(Provedor(
             "NVIDIA/Reserva",
