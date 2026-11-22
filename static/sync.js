@@ -18,7 +18,7 @@
   let autoTimer=null, autoDue=0, lastAttempt=0, autoPaused=false, retryAfter=0, queuedDelay=null;
   const AUTO_MIN=5000, AUTO_NEXT=15000, AUTO_RETRY=120000, AUTO_WRITE=1000;
   const SYNC_KEYS=new Set(Object.values(GROUPS).flat());
-  const canReceive=()=>!STATE.automatic||window.CTI_SYNC_VIEW?.canReceive?.()===true;
+  const canReceive=()=>window.CTI_SYNC_VIEW?.canReceive?.()===true;
   const MAX_KEY_CHARS=350000;
   const MAX_REQUEST_BYTES=800000;
   const pause=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -215,7 +215,7 @@
         for(const key of GROUPS[ns])if(!pending.has(key))seen[key]=fnv(local[key]);
         meta.namespaces[ns]={initialized:true,version,seen};saveMeta(meta);
       }
-      return {deferred:true,received:false};
+      return {deferred:true,received:false,conflicts:p.conflicts.map(key=>ns+': '+key)};
     }
     // Atualização local e memória no mesmo turno; não ceder entre registros recebidos.
     for(const item of p.received){
