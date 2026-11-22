@@ -538,23 +538,50 @@ def explicacao_salva(q: dict):
     """
     import ia_provedores
     p = ia_provedores.salvo(q, min_schema=4)
-    return formatar(q, p) if p else None
+    if p:
+        return formatar(q, p)
+    try:
+        from ai_cache_store import STORE, tutor_key
+        key, _ = tutor_key(q, "tutor")
+        cached = STORE.get(key, "shared")
+        return cached if cached and cached.get("fonte") == "ia" and cached.get("schema_version", 0) >= 4 else None
+    except Exception:
+        return None
 
 
 def gerar_explicacao_ia(q: dict) -> dict:
-    """Comentário v22 salvo → LLM → fallback legado → indisponível."""
+    """Arquivo local -> cache global validado -> uma geração distribuída -> indisponível."""
     import ia_provedores
+    from ai_cache_store import get_or_generate, tutor_key
     p = ia_provedores.salvo(q, min_schema=4)
-    legado = ia_provedores.salvo(q)
-    if not p:
-        p, motivo = ia_provedores.gerar(q)
-        if not p:
-            if legado:
-                out = formatar(q, legado)
-                out["aviso_modulo"] = "Comentário legado exibido; Farmacologia & Conduta será gerada quando a IA estiver disponível."
-                return out
-            return {"fonte": "indisponivel", "tema": q.get("tema"), "gabarito": q.get("gabarito_oficial"), "motivo": motivo}
-    return formatar(q, p)
+    if p:
+        return formatar(q, p)
+    key, digest = tutor_key(q, "tutor")
+    reason = {"value": None}
+    legacy = ia_provedores.salvo(q)
+
+    def generator():
+        result, why = ia_provedores.gerar(q)
+        reason["value"] = why
+        return formatar(q, result) if result else None
+
+    def valid(out):
+        return (isinstance(out, dict) and out.get("fonte") == "ia"
+                and out.get("question_id") == q.get("id")
+                and out.get("schema_version", 0) >= 4
+                and out.get("gabarito") == q.get("gabarito_oficial"))
+
+    out = get_or_generate(key=key, digest=digest, kind="tutor",
+                          generator=generator, validator=valid, wait_seconds=9)
+    if out and valid(out):
+        return out
+    if legacy:
+        out = formatar(q, legacy)
+        out["aviso_modulo"] = "Comentário legado exibido; Farmacologia & Conduta será gerada quando a IA estiver disponível."
+        return out
+    return {"fonte": "indisponivel", "tema": q.get("tema"),
+            "gabarito": q.get("gabarito_oficial"),
+            "motivo": reason["value"] or "Geração em andamento ou capacidade temporariamente ocupada."}
 
 
 def gerar_mini_estacao_ia(q: dict) -> dict:
@@ -570,12 +597,30 @@ def enriquecer_mini_estacao_ia(q: dict) -> dict:
 
 
 def gerar_dica_ia(q: dict) -> dict:
-    """Dica curta sem spoiler; evita gerar comentário/farmacologia antes da resposta."""
+    """Dica sem spoiler fica em cache separado; nunca usa o comentário completo."""
     import ia_provedores
+    from ai_cache_store import get_or_generate, tutor_key
     p = ia_provedores.salvo(q)
     if p and p.get("dica"):
-        return {"fonte": "ia", "tema": q.get("tema"), "dicas": [p.get("dica")], "modelo": p.get("modelo", "")}
-    dica, modelo, motivo = ia_provedores.gerar_dica_rapida(q)
-    if not dica:
-        return {"fonte": "indisponivel", "tema": q.get("tema"), "dicas": [], "motivo": motivo}
-    return {"fonte": "ia", "tema": q.get("tema"), "dicas": [dica], "modelo": modelo or ""}
+        return {"fonte": "ia", "tema": q.get("tema"),
+                "dicas": [p["dica"]], "modelo": p.get("modelo", "")}
+    key, digest = tutor_key(q, "tip")
+    why = {"value": None}
+    def generator():
+        tip, model, error = ia_provedores.gerar_dica_rapida(q)
+        why["value"] = error
+        return {"fonte":"ia","tema":q.get("tema"),"dicas":[tip],
+                "modelo":model or ""} if tip else None
+    def valid(out):
+        return (isinstance(out, dict) and out.get("fonte")=="ia"
+                and out.get("tema")==q.get("tema")
+                and isinstance(out.get("dicas"),list)
+                and len(out["dicas"])==1
+                and isinstance(out["dicas"][0],str)
+                and len(out["dicas"][0].strip())>=12)
+    answer = get_or_generate(key=key, digest=digest, kind="tip",
+                             generator=generator, validator=valid, wait_seconds=5)
+    if answer and valid(answer):
+        return answer
+    return {"fonte":"indisponivel","tema":q.get("tema"),"dicas":[],
+            "motivo":why["value"] or "Geração em andamento ou capacidade temporariamente ocupada."}
