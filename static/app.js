@@ -12,7 +12,11 @@
       load('/static/mb32.js?v=32.0.1', function(){
       load('/static/mb33.js?v=33.0.1', function(){
         load('/static/kotu.js?v=32.1.0');
-        load('/static/cera.js?v=1.0.2');
+        load('/static/cera.js?v=1.0.3', function(){
+          load('/static/inteligencia-core.js?v=1.0.0', function(){
+            load('/static/inteligencia.js?v=1.0.0');
+          });
+        });
       });
     });
     });

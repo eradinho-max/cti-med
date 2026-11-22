@@ -238,7 +238,14 @@
     if(!$('#view-cera')||!$('#ctiCeraHub'))return;
     // A página e seus botões de navegação já pertencem ao HTML.
     // Não injetar outro painel dentro de Trilhas de Estudo.
-    window.CTI_CERA={open,refresh:render,summary:()=>stats(),reloadFromStorage:()=>{
+    window.CTI_CERA={open,refresh:render,summary:()=>stats(),selectTopic:(area,theme)=>{
+      const match=topics().find(x=>x.area===area&&x.theme===theme);
+      if(!match)return false;
+      state.area=match.area;state.theme=match.theme;
+      db.active=key(match.area,match.theme);resetForm();
+      if(!persist())return false;
+      open();render();return true;
+    },reloadFromStorage:()=>{
       db=read();
       state.area='';state.theme='';resetForm();
       if($('#view-cera')?.classList.contains('on'))render();
