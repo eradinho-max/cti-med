@@ -41,11 +41,11 @@ class ReliabilityTests(unittest.TestCase):
             env.pop(k,None)
         env["NVIDIA_API_KEY"]="test-token-not-a-secret"
         env["CTI_NVIDIA_MODEL"]="nvidia/example-primary"
-        env["CTI_NVIDIA_FALLBACK_MODEL"]="meta/llama-3.3-70b-instruct"
+        env["CTI_NVIDIA_FALLBACK_MODEL"]="nvidia/nemotron-3.5-super-vl-120b-a12b"
         code="import ia_provedores as a; print([(p.nome,p.modelo) for p in a.PROVEDORES])"
         out=subprocess.check_output([sys.executable,"-c",code],env=env,text=True)
         self.assertIn("nvidia/example-primary",out)
-        self.assertIn("meta/llama-3.3-70b-instruct",out)
+        self.assertIn("nvidia/nemotron-3.5-super-vl-120b-a12b",out)
 
     def test_tutor_switches_to_backup_on_invalid(self):
         first=FakeProvider("primary",response={"itens":[{"resumo":"insuficiente"}]})
