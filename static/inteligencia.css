@@ -1,0 +1,29 @@
+/* Inteligência de Provas — área independente, sem regras globais */
+#view-inteligencia .cti-int-selectors {display:flex;gap:14px;flex-wrap:wrap;align-items:end}
+#view-inteligencia .cti-int-selectors .f{flex:1 1 220px;min-width:0}
+#view-inteligencia .cti-int-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}
+#view-inteligencia .cti-int-kpi{background:var(--card);border:1px solid var(--bd);padding:16px;border-radius:16px;display:flex;flex-direction:column;gap:6px}
+#view-inteligencia .cti-int-kpi strong{font-size:clamp(17px,2.6vw,25px);overflow-wrap:anywhere}
+#view-inteligencia .cti-int-tabs{display:flex;gap:8px;margin:16px 0;flex-wrap:wrap}
+#view-inteligencia .cti-int-tabs button{border:1px solid var(--bd);border-radius:12px;padding:11px 14px;color:var(--text);background:var(--card);font:inherit;cursor:pointer}
+#view-inteligencia .cti-int-tabs button.on{border-color:var(--navy);background:var(--navy);color:white}
+#view-inteligencia .cti-int-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+#view-inteligencia .cti-int-topic{margin:0}
+#view-inteligencia .cti-int-topic-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#view-inteligencia .cti-int-topic-head .pill{white-space:nowrap}
+#view-inteligencia .cti-int-topic-facts{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+#view-inteligencia .cti-int-topic-facts span{border-radius:8px;padding:6px 9px;background:var(--card2);font-size:12px}
+#view-inteligencia .cti-int-actions{flex-wrap:wrap;gap:8px;margin-top:12px}
+#view-inteligencia .cti-int-bar{margin:14px 0}
+#view-inteligencia .cti-int-bar-head{display:flex;justify-content:space-between;gap:10px;margin-bottom:6px}
+#view-inteligencia .cti-int-track{height:8px;background:var(--card2);border-radius:9px;overflow:hidden}
+#view-inteligencia .cti-int-track i{display:block;height:100%;background:var(--navy);border-radius:9px}
+#view-inteligencia .cti-int-table-wrap{overflow-x:auto}
+#view-inteligencia .cti-int-table-wrap table{width:100%;min-width:550px}
+#view-inteligencia .cti-int-note{margin:16px 0}
+@media(max-width:760px){
+  #view-inteligencia .cti-int-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #view-inteligencia .cti-int-list{grid-template-columns:1fr}
+  #view-inteligencia .cti-int-tabs{display:grid;grid-template-columns:1fr}
+  #view-inteligencia .cti-int-topic-head{flex-wrap:wrap}
+}
