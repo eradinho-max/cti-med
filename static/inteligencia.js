@@ -19,12 +19,12 @@
   }
   function renderTabs(){
     return '<div class="cti-int-tabs" role="tablist" aria-label="Análises disponíveis">'+[
-      ['estrategia','Minha estratégia'],['historico','Raio-X da prova'],['mudancas','Evolução histórica']
+      ['estrategia','Minha estratégia'],['historico','Raio-X da prova'],['tipos','Como a banca cobra'],['comparar','Comparar provas'],['mudancas','Evolução histórica']
     ].map(([id,title])=>'<button type="button" role="tab" data-int-tab="'+id+'" aria-selected="'+(state.tab===id)+'" class="'+(state.tab===id?'on':'')+'">'+title+'</button>').join('')+'</div>';
   }
   function status(text){root.innerHTML='<div class="card"><p class="small muted">'+escape(text)+'</p></div>';}
   function note(){
-    return '<p class="small muted cti-int-note">A análise descreve exclusivamente o acervo disponível no CTI. Frequência passada não garante repetição futura. Classificação de dificuldade, tipo de cobrança e comparações entre provas não são inferidas sem dados validados.</p>';
+    return '<p class="small muted cti-int-note">A análise descreve exclusivamente o acervo disponível no CTI. Frequência passada não garante repetição futura. A distribuição de tipos de cobrança é uma triagem textual provisória, não uma classificação validada. Questões incertas permanecem sem classificação. Dificuldade individual é baseada em acertos observados; a comparação entre provas descreve a composição dos acervos disponíveis.</p>';
   }
   function render(){
     if(!root)return;
@@ -38,7 +38,7 @@
       ['Questões indexadas',num(d.total)],['Edições representadas',num(d.editions.length)],
       ['Temas no filtro',num(d.themes.length)],['Cobertura pessoal',num(d.completed)+' / '+num(d.totalScope)]
     ].map(([label,value])=>'<div class="cti-int-kpi"><span class="small muted">'+label+'</span><strong>'+escape(value)+'</strong></div>').join('')+'</div>';
-    root.innerHTML=tools+kpis+renderTabs()+(state.tab==='estrategia'?strategy(d):state.tab==='historico'?historical(d):changes(d))+note();
+    root.innerHTML=tools+kpis+renderTabs()+(state.tab==='estrategia'?strategy(d):state.tab==='historico'?historical(d):state.tab==='tipos'?classifications(d):state.tab==='comparar'?comparisons(d):changes(d))+note();
     $('#ctiIntExame').onchange=e=>{state.exam=e.target.value;state.area='';render();};
     $('#ctiIntArea').onchange=e=>{state.area=e.target.value;render();};
     root.querySelectorAll('[data-int-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.intTab;render();});
@@ -64,7 +64,7 @@
         const idx=d.themes.indexOf(t);
         return '<article class="card cti-int-topic"><div class="cti-int-topic-head"><div><b>'+escape(t.theme)+'</b><div class="small muted">'+escape(t.area)+'</div></div><span class="pill">Prioridade '+t.score+'/100</span></div>'+
         '<div class="cti-int-topic-facts"><span>'+num(t.n)+' questões no acervo</span><span>'+t.editions+'/'+t.ofEditions+' edições</span><span>'+(t.accuracy===null?'Sem respostas':percent(t.accuracy)+' acertos')+' · '+t.uniqueDone+' distintas</span></div>'+
-        '<p class="small muted">'+escape(t.next)+' · Evidência individual '+escape(t.confidence)+'</p>'+
+        '<p class="small muted">'+escape(t.next)+' · '+escape(t.difficulty)+' · Evidência individual '+escape(t.confidence)+'</p>'+
         '<div class="row cti-int-actions"><button class="btn sm" type="button" data-int-type="train" data-int-action="'+idx+'">Treinar tema</button><button class="btn sec sm" type="button" data-int-type="review" data-int-action="'+idx+'">Revisar conteúdo</button><button class="btn sec sm" type="button" data-int-type="cera" data-int-action="'+idx+'">Método CERA</button></div></article>';
       }).join('')+'</div>';
   }
@@ -74,6 +74,27 @@
       '<div class="card"><h3>Recorrência dos temas</h3><p class="small muted">Contagem observada por edição, não probabilidade da próxima prova.</p>'+
       (d.themes.length?'<div class="cti-int-table-wrap"><table><thead><tr><th>Tema</th><th>Questões</th><th>Edições</th><th>Proporção</th></tr></thead><tbody>'+
         d.themes.slice().sort((a,b)=>b.n-a.n).slice(0,25).map(t=>'<tr><td><b>'+escape(t.theme)+'</b><div class="small muted">'+escape(t.area)+'</div></td><td>'+num(t.n)+'</td><td>'+t.editions+'/'+t.ofEditions+'</td><td>'+percent(t.pct)+'</td></tr>').join('')+'</tbody></table></div>':'<p>Sem temas no filtro.</p>')+'</div>';
+  }
+  function classifications(d){
+    const t=d.taxonomy||{types:[],classified:0,undetermined:d.totalScope,total:d.totalScope,coveragePct:0};
+    const sufficient=t.total>0&&t.classified>0;
+    return '<div class="card"><h3>Como a banca cobra — triagem textual</h3>'+
+      '<p class="small muted">Classificação automática baseada em expressões da pergunta. É uma categorização descritiva por regras, não um rótulo oficial da banca. Ausência de rótulo não significa ausência de conteúdo.</p>'+
+      '<div class="cti-int-kpis"><div class="cti-int-kpi"><span class="small muted">Classificadas provisoriamente</span><strong>'+num(t.classified)+'/'+num(t.total)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Sem classificação</span><strong>'+num(t.undetermined)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Cobertura da triagem</span><strong>'+percent(t.coveragePct)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Natureza dos rótulos</span><strong>Automática</strong></div></div>'+
+      (!sufficient?'<p class="small muted"><b>Leitura restrita:</b> não há classificações para montar o gráfico.</p>':'<p class="small muted"><b>Leitura exploratória:</b> os percentuais descrevem apenas os itens classificados, não necessariamente todas as questões da prova.</p>')+
+      (sufficient&&t.types.length?t.types.map(x=>bar(x.label,x.pctClassified,num(x.n)+' rótulos · '+percent(x.pctTotal)+' do acervo analisado')).join(''):!sufficient?'<p class="small muted">Não há itens classificados neste filtro.</p>':'<p class="small muted">Não há rótulos definidos neste filtro.</p>')+
+      '<h3>Seu desempenho por competência</h3>'+
+      (t.competencies?.length?t.competencies.map(x=>'<div class="cti-int-topic"><b>'+escape(x.label)+'</b><div class="small muted">'+num(x.done)+' questões respondidas, de '+num(x.total)+' classificadas · '+(x.accuracy===null?'sem taxa de acerto':percent(x.accuracy)+' acertos')+' · '+escape(x.difficulty)+'</div></div>').join(''):'<p class="small muted">Responda questões classificadas para acompanhar competências.</p>')+
+      '<p class="small muted">Os percentuais das barras são calculados sobre as questões classificadas, não sobre todas as questões. As competências ajudam a selecionar revisões; os rótulos não alteram gabaritos nem notas.</p></div>';
+  }
+  function comparisons(d){
+    const rows=d.comparisons||[];
+    return '<div class="card"><h3>Semelhança entre os acervos</h3><p class="small muted">Compara a distribuição das grandes áreas e os assuntos presentes nas provas. A pontuação é uma medida descritiva do conteúdo disponível, não significa que as bancas sejam equivalentes ou cobrarão os mesmos temas.</p>'+
+      (rows.length?rows.map(x=>'<div class="cti-int-topic"><b>'+escape(x.exam)+'</b>'+bar('Similaridade temática e de áreas',x.score,num(x.sharedThemes)+' temas em comum · '+num(x.questions)+' questões indexadas')+
+      '<p class="small muted">Distribuição por área: '+percent(x.areaSimilarity)+' · Sobreposição temática: '+percent(x.themeOverlap)+'</p></div>').join(''):'<p class="small muted">Sem outras provas no acervo.</p>')+'</div>';
   }
   function changes(d){
     const enough=d.recentEditions.length>=2&&d.olderEditions.length>=2&&d.recentTotal>=20&&d.olderTotal>=20;

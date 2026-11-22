@@ -28,7 +28,11 @@ jobs:
           node-version: "22"
       - run: pip install -r requirements.txt
       - name: Python syntax
-        run: python -m py_compile main.py kotu_api.py clinical_ai.py ia_provedores.py security_auth.py user_store.py sync_store.py segunda_fase.py atualizacoes.py
+        run: python -m py_compile exam_taxonomy.py main.py kotu_api.py clinical_ai.py ia_provedores.py security_auth.py user_store.py sync_store.py segunda_fase.py atualizacoes.py
+      - name: Taxonomia de questões
+        run: python -m unittest discover -s tests -p test_exam_taxonomy.py
+      - name: Taxonomia — auditoria do acervo real
+        run: python tests/audit_taxonomy.py
       - name: JavaScript syntax
         run: |
           node --check static/app.js
@@ -38,6 +42,7 @@ jobs:
           node tests/inteligencia-provas-regression.cjs
           node --max-old-space-size=2048 tests/inteligencia-acervo-real.cjs
           node tests/inteligencia-interacoes.cjs
+          node tests/tipos-cobranca-regression.cjs
           node --check static/mb32.js
           node --check static/mb33.js
           node --check static/cera.js
