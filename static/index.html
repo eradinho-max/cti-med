@@ -94,6 +94,7 @@
       <button data-v="banco"><svg class="i"><use href="#i-banco"/></svg>Banco de Questões</button>
       <button data-v="simulado"><svg class="i"><use href="#i-simulado"/></svg>Simulados</button>
       <button data-v="desempenho"><svg class="i"><use href="#i-bars"/></svg>Desempenho</button>
+  <button data-v="inteligencia"><svg class="i"><use href="#i-chart"/></svg>Inteligência de Provas</button>
       <button data-v="reforco"><svg class="i"><use href="#i-trilha"/></svg>Trilhas</button>
       <button data-v="segunda"><svg class="i"><use href="#i-steth"/></svg>2ª Fase</button>
       <button data-v="atualizacoes"><svg class="i"><use href="#i-radar"/></svg>Atualizações</button>
@@ -150,6 +151,7 @@
     <div class="quick">
       <button data-go="simulado"><svg class="i"><use href="#i-simulado"/></svg>Simulados</button>
       <button data-go="desempenho"><svg class="i"><use href="#i-bars"/></svg>Desempenho</button>
+      <button data-go="inteligencia"><svg class="i"><use href="#i-chart"/></svg>Inteligência de Provas</button>
       <button data-go="reforco"><svg class="i"><use href="#i-trilha"/></svg>Trilhas</button>
       <button data-go="erros"><svg class="i"><use href="#i-rev"/></svg>Revisões</button>
     </div>
@@ -324,6 +326,12 @@
   <div class="grid g3 error-learning-kpis" id="eLearningKpis"></div>
   <div class="card" id="eFlashPanel" hidden></div>
   <div id="eLista"></div>
+</section>
+
+<!-- ======================= INTELIGÊNCIA DE PROVAS ======================= -->
+<section class="view" id="view-inteligencia">
+  <div class="banner"><div class="kick">Análise histórica e orientação individual</div><h2>Inteligência de Provas</h2><p>Entenda o perfil do exame e transforme evidências de desempenho em escolhas de estudo. Dados históricos não garantem o que será cobrado.</p></div>
+  <div id="ctiInteligenciaHub" aria-live="polite"><div class="card"><p class="small muted">Carregando indicadores do acervo…</p></div></div>
 </section>
 
 <!-- ======================= DESEMPENHO ======================= -->
@@ -558,6 +566,7 @@
   <button class="it" data-go="missao"><svg class="i"><use href="#i-target"/></svg>Missão Diária</button>
   <button class="it" data-go="erros"><svg class="i"><use href="#i-rev"/></svg>Revisões (Caderno de Erros)</button>
   <button class="it" data-go="cera"><svg class="i"><use href="#i-book"/></svg>Método CERA · Aprendizagem Ativa</button>
+  <button class="it" data-go="inteligencia"><svg class="i"><use href="#i-chart"/></svg>Inteligência de Provas</button>
   <button class="it" data-go="reforco"><svg class="i"><use href="#i-trilha"/></svg>Trilhas de Estudo</button>
   <button class="it" data-go="segunda"><svg class="i"><use href="#i-steth"/></svg>2ª Fase · Estações</button>
   <button class="it" data-go="atualizacoes"><svg class="i"><use href="#i-radar"/></svg>Atualizações médicas</button>
@@ -582,6 +591,6 @@
 <div class="toast" id="toast"></div>
 
 <script src="/static/pwa.js?v=1" defer></script>
-<script src="/static/app.js?v=31.0.2" defer></script>
+<script src="/static/app.js?v=31.0.3" defer></script>
 </body>
 </html>
