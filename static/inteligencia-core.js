@@ -40,6 +40,18 @@
     for(const [k,n] of attemptsByTheme){const t=byTheme.get(k);if(t)t.attempts=n;}
     const areas=[...byArea.values()].map(a=>({area:a.area,n:a.n,pct:rate(a.n,base.length),editions:a.editions.size})).sort((a,b)=>b.n-a.n||a.area.localeCompare(b.area,'pt-BR'));
     const selectedArea=byArea.has(areaFilter)?areaFilter:'';
+    const classificationCounts=new Map();
+    let classified=0,undetermined=0;
+    for(const q of base){
+      if(selectedArea&&txt(q.area||q.especialidade)!==selectedArea)continue;
+      const label=txt(q.cobranca);
+      if(!label||label==='Não classificada'){undetermined++;continue;}
+      classified++;classificationCounts.set(label,(classificationCounts.get(label)||0)+1);
+    }
+    const collectionCount=classified+undetermined;
+    const collectionCoverage=rate(classified,collectionCount);
+    const types=[...classificationCounts].map(([label,n])=>({label,n,pctClassified:rate(n,classified),pctTotal:rate(n,collectionCount)}))
+      .sort((a,b)=>b.n-a.n||a.label.localeCompare(b.label,'pt-BR'));
     const subjects=[...byTheme.values()].filter(t=>!selectedArea||t.area===selectedArea);
     const maxN=Math.max(1,...subjects.map(t=>t.n));
     const themes=subjects.map(t=>{
@@ -76,6 +88,7 @@
       completed,coveragePct:rate(completed,totalForArea),themes,changes,
       recentEditions:recent,olderEditions:older,recentTotal,olderTotal,
       editionRows:editions.map(ed=>({edition:ed,n:editionTotals.get(ed)||0})),
+      taxonomy:{types,classified,undetermined,total:collectionCount,coveragePct:collectionCoverage,provisional:true},
       method:'Frequência é observada no acervo, não uma previsão; prioridade CTI = 40% relevância relativa + 35% dificuldade individual (neutra com menos de cinco questões distintas) + 25% lacuna de cobertura.'};
   }
   const api={analyze,eligible,rate};
