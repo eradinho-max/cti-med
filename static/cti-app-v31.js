@@ -322,6 +322,8 @@ function mostrar(v, opts = {}){
   if (v === 'reforco') renderReforco();
   if (v === 'cera') window.CTI_CERA?.refresh?.();
   if (v === 'inteligencia') window.CTI_INTELIGENCIA?.refresh?.();
+  // Reentrar em uma tela segura dispara uma leitura imediata do progresso remoto.
+  if (SYNC_SAFE_VIEWS.has(v) && v !== 'painel') window.CTI_SYNC?.onDashboard?.();
   if (v === 'segunda') renderFase2();
   if (v === 'atualizacoes') renderAtualizacoes();
   if (v === 'admin') renderAdmin();
@@ -329,10 +331,15 @@ function mostrar(v, opts = {}){
   window.scrollTo({top:0, behavior:opts.semHistorico ? 'auto' : 'smooth'});
 }
 
-// Receber somente no painel, sem formulário ativo nem questão em andamento.
-// O estado em memória deve acompanhar o armazenamento antes de novos registros.
+// Leitura automática em vistas seguras; nunca substituir uma prova, estação,
+// edição do CERA ou formulário ativo. O estado de memória acompanha o storage.
+// As demais vistas aguardam até o aluno retornar a uma tela de leitura.
+const SYNC_SAFE_VIEWS=new Set(['painel','desempenho','erros','favoritos','inteligencia']);
 window.CTI_SYNC_VIEW={
-  canReceive:()=>!!STATS&&viewAtual()==='painel'&&!document.querySelector('dialog[open]:not(#ctiAccountDialog)')&&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')&&!destaqueBusy,
+  canReceive:()=>!!STATS&&SYNC_SAFE_VIEWS.has(viewAtual())
+    &&!document.querySelector('dialog[open]:not(#ctiAccountDialog)')
+    &&!document.activeElement?.matches('input,textarea,select,[contenteditable="true"]')
+    &&!destaqueBusy,
   apply:keys=>{
     if(keys.includes('medquest_historico'))HIST=ls.get('medquest_historico',[]);
     if(keys.includes('medquest_erros'))ERROS=ls.get('medquest_erros',[]);
@@ -345,7 +352,14 @@ window.CTI_SYNC_VIEW={
     if(keys.includes('cti_perfil'))aplicarPerfil();
     if(keys.includes('medquest_theme'))document.documentElement.dataset.theme=ls.get('medquest_theme')==='dark'?'dark':'';
     atualizarHeader();
-    renderPainel();
+    // Recalcular os indicadores em memória sem recarregar o app nem apagar
+    // campos que o aluno ainda estiver preenchendo.
+    const active=viewAtual();
+    if(active==='painel')renderPainel();
+    else if(active==='desempenho')renderDesempenho();
+    else if(active==='erros')renderErros();
+    else if(active==='favoritos')renderFavoritos();
+    else if(active==='inteligencia')window.CTI_INTELIGENCIA?.refresh?.();
   }
 };
 

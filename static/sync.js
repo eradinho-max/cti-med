@@ -336,7 +336,9 @@
       else localStorage.setItem(item.key,item.raw);
       local[item.key]=item.raw;
     }
-    if(STATE.automatic&&p.received.length)window.CTI_SYNC_VIEW.apply(p.received.map(item=>item.key));
+    // Aplicar tanto em sincronização automática quanto manual; storage isolado
+    // sem atualizar a memória da aplicação deixava a tela desatualizada até F5.
+    if(p.received.length)window.CTI_SYNC_VIEW?.apply?.(p.received.map(item=>item.key));
     const seen=Object.assign({},previous.seen||{});
     for(const key of GROUPS[ns]){
       await pause();
@@ -401,7 +403,7 @@
       STATE.error=problems.join(' · ').slice(0,450);
       retryAfter=problems.length?now()+AUTO_RETRY:0;
       if(manual&&typeof window.toast==='function'){
-        window.toast(STATE.error|| (STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados recebidos. Atualize a página para vê-los.':'Sincronização concluída.'));
+        window.toast(STATE.error|| (STATE.deferred?'Volte ao painel para concluir a recuperação dos dados.':received&&!STATE.automatic?'Dados atualizados sem recarregar a página.':'Sincronização concluída.'));
       }
       return !problems.length;
     }catch(e){
@@ -423,7 +425,7 @@
     if(STATE.busy)return 'Sincronizando…';
     if(STATE.error)return 'Sincronização pendente · '+STATE.error;
     if(STATE.deferred)return 'Dados disponíveis · volte ao painel para receber';
-    if(STATE.received)return 'Dados recebidos · atualize a página para visualizá-los';
+    if(STATE.received)return 'Dados recebidos e atualizados na tela';
     if(STATE.last)return 'Sincronizado · '+new Date(STATE.last).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     return 'Pronto para sincronizar';
   }
