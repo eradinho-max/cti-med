@@ -85,6 +85,10 @@ async function browser(initial={}, automatic=false){
  assert.equal(phone.map.get('medquest_historico'),'["q1"]');
  assert.equal(phone.map.get('cti_study_notes_v32'),'{"note":"PC"}');
  assert.equal(phone.reloads(),0);
+ assert.ok(phone.applied.includes('medquest_historico'),
+   'manual download must update in-memory CTI state without page reload');
+ assert.ok(phone.applied.includes('cti_study_notes_v32'),
+   'manual study download must notify in-memory views');
 
  // Celular -> computador: anotação, treino e histórico novo.
  phone.map.set('cti_study_notes_v32',JSON.stringify({note:'PHONE'}));
@@ -93,6 +97,7 @@ async function browser(initial={}, automatic=false){
  assert.equal(await pc.sync(),true,'PC must receive phone study/training');
  assert.equal(pc.map.get('cti_study_notes_v32'),JSON.stringify({note:'PHONE'}));
  assert.equal(pc.map.get('cti_doc_treinos'),JSON.stringify({sessions:['session-phone']}));
+ assert.ok(pc.applied.includes('cti_doc_treinos'), 'PC applies mobile data while open');
 
  // Reabertura do navegador e nova sessão com o mesmo armazenamento local.
  // Não simula login real; valida persistência do estado local e do servidor.
@@ -307,5 +312,13 @@ async function browser(initial={}, automatic=false){
  assert.equal(nonemptyPhone.map.get('medquest_erros'),JSON.stringify([errorPc]));
  assert.equal(nonemptyPhone.map.get('cti_flashcards_erros_v31'),JSON.stringify({'580':flashPc}));
 
- console.log('PASS manual/automatic cross-device, append-only history, conflict isolation, safe active-view sync');
+ const ui=fs.readFileSync('static/cti-app-v31.js','utf8');
+ assert.ok(ui.includes("SYNC_SAFE_VIEWS=new Set(['painel','desempenho','erros','favoritos','inteligencia'])"),
+   'safe read-only views must update without manual navigation');
+ assert.ok(ui.includes("else if(active==='erros')renderErros()"));
+ assert.ok(ui.includes("else if(active==='desempenho')renderDesempenho()"));
+ assert.ok(ui.includes("else if(active==='inteligencia')window.CTI_INTELIGENCIA?.refresh?.()"));
+ assert.ok(!ui.includes("SYNC_SAFE_VIEWS=new Set(['quiz'"),'quiz must not accept remote changes');
+ assert.ok(!script.includes('Atualize a página para vê-los.'),'sync must not require reload after receiving');
+ console.log('PASS manual/automatic cross-device, live safe views, no reload, conflicts and backups');
 })().catch(err=>{console.error(err);process.exitCode=1});
