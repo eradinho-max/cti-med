@@ -63,7 +63,7 @@ _RAW_RULES = {
     "Quadro clínico": [
         r"\b(?:quadro clinico|clinical presentation|manifestacoes clinicas)\b",
         r"\b(?:sinais e sintomas|signs and symptoms|achados clinicos)\b",
-        r"\b(?:sintoma|sinal|manifestacao)\s+(?:mais comum|caracteristico|tipico)\b",
+        r"\b(?:sintoma|sinal|manifestacao)(?:\s+clinica)?\s+(?:mais comum|caracteristico|tipico)\b",
     ],
     "Complicações": [
         r"\b(?:complicacao|complicacoes|complication|complications)\b",
