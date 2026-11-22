@@ -5,7 +5,7 @@ import json
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 
@@ -156,15 +156,35 @@ def build_kotu_router(by_id: dict, est_by_id: dict, exames_ocultos: set, conteud
             return context, "estacao", e.get("area",""), e.get("titulo","")
         raise HTTPException(400, "Material disponível após questão respondida ou estação autoavaliada.")
 
+    def _new_kotu_material(ia_module, context, origin, area, theme):
+        material, model, reason = ia_module.gerar_material_estudo(context, origin, area, theme)
+        return {"material":material, "model":model} if material else None
+
     @router.post("/api/kotu/estudo")
-    def kotu_study(req: KotuStudyRequest):
+    def kotu_study(req: KotuStudyRequest, request: Request):
         c = req.context
         if c.origin == "exam" or (c.mode == "prova" and not c.answered):
             raise HTTPException(423, blocked)
         context, origin, area, theme = material_context(c)
         import ia_provedores
         t0 = time.time()
-        material, model, reason = ia_provedores.gerar_material_estudo(context, origin, area, theme)
+        # Material de estudo inclui contexto personalizado: persistência privada por conta.
+        # O chat livre permanece transitório; não se compartilha conversas entre alunos.
+        from ai_cache_store import fingerprint, get_or_generate
+        identity = getattr(request.state, "user", None)
+        owner = str(getattr(identity, "user_id", "") or "").strip()
+        key, digest = fingerprint("kotu_study", {
+            "context": context, "origin":origin, "area":area, "theme":theme, "schema":1
+        }, owner)
+        answer = get_or_generate(
+            key=key, digest=digest, kind="kotu_study", owner=owner,
+            generator=lambda: _new_kotu_material(ia_provedores, context, origin, area, theme),
+            validator=lambda obj: isinstance(obj,dict) and isinstance(obj.get("material"),dict)
+               and bool(obj["material"].get("titulo")) and len(obj["material"].get("flashcards") or [])>=3,
+            wait_seconds=7
+        )
+        material = answer.get("material") if answer else None
+        model = answer.get("model", "") if answer else ""
         if not material:
             return {"ok":False,"material":None,"code":"AI_UNAVAILABLE","message":"Kotu não conseguiu gerar o material agora."}
         return {"ok":True,"material":material,"meta":{"model":model,"latencyMs":int((time.time()-t0)*1000),"schemaVersion":1,"source":{"origin":origin,"questionId":c.questionId,"stationId":c.stationId}}}
