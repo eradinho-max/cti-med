@@ -322,6 +322,8 @@ function mostrar(v, opts = {}){
   if (v === 'reforco') renderReforco();
   if (v === 'cera') window.CTI_CERA?.refresh?.();
   if (v === 'inteligencia') window.CTI_INTELIGENCIA?.refresh?.();
+  // Reentrar em uma tela segura dispara uma leitura imediata do progresso remoto.
+  if (SYNC_SAFE_VIEWS.has(v) && v !== 'painel') window.CTI_SYNC?.onDashboard?.();
   if (v === 'segunda') renderFase2();
   if (v === 'atualizacoes') renderAtualizacoes();
   if (v === 'admin') renderAdmin();
