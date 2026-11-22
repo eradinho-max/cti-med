@@ -161,7 +161,7 @@ function retaFinalAtiva(){ const d=diasAteProva(); return d!==null&&d>=0&&d<=42;
 let STATS = null, INDICE = [], IDX = {}, REFORCO = null, AUTH_STATUS = null, ADMIN_STATUS = null;
 
 /* ============================================================ navegação interna do PWA */
-const ROTAS = new Set(['painel','missao','banco','simulado','erros','favoritos','desempenho','reforco','cera','segunda','atualizacoes','admin','quiz']);
+const ROTAS = new Set(['painel','missao','banco','simulado','erros','favoritos','desempenho','reforco','cera','inteligencia','segunda','atualizacoes','admin','quiz']);
 let NAV_READY = false;
 function viewAtual(){
   const v = $('.view.on');
@@ -321,6 +321,7 @@ function mostrar(v, opts = {}){
   if (v === 'desempenho') renderDesempenho();
   if (v === 'reforco') renderReforco();
   if (v === 'cera') window.CTI_CERA?.refresh?.();
+  if (v === 'inteligencia') window.CTI_INTELIGENCIA?.refresh?.();
   if (v === 'segunda') renderFase2();
   if (v === 'atualizacoes') renderAtualizacoes();
   if (v === 'admin') renderAdmin();
