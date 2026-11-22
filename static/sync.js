@@ -142,6 +142,108 @@
     return raw.length<=MAX_KEY_CHARS?raw:null;
   }
 
+  // Estas duas estruturas são diferentes do histórico: são coleções por ID.
+  // Mescla conservadora, sem avançar estágio/revisão em caso de dúvida.
+  // Coleções vazias não são mescladas para não reverter uma exclusão deliberada.
+  function mergeLearningRecords(key,localRaw,remoteRaw){
+    if(!['medquest_erros','cti_flashcards_erros_v31'].includes(key)
+       ||localRaw===null||remoteRaw===null)return null;
+    let local,remote;
+    try{local=JSON.parse(localRaw);remote=JSON.parse(remoteRaw)}catch{return null}
+    const errors=key==='medquest_erros';
+    if(errors?(!Array.isArray(local)||!Array.isArray(remote)):
+       (!local||!remote||typeof local!=='object'||typeof remote!=='object'
+        ||Array.isArray(local)||Array.isArray(remote)))return null;
+    const localEntries=errors?local:Object.values(local);
+    const remoteEntries=errors?remote:Object.values(remote);
+    if(!localEntries.length||!remoteEntries.length||
+       localEntries.length>5000||remoteEntries.length>5000)return null;
+    const byId=new Map();
+    const validId=v=>Number.isSafeInteger(Number(v))&&Number(v)>0;
+    for(const [source,items] of [['remote',remoteEntries],['local',localEntries]]){
+      const seen=new Set();
+      for(const item of items){
+        if(!item||typeof item!=='object'||Array.isArray(item)||!validId(item.id))return null;
+        const id=String(item.id);
+        if(seen.has(id))return null;seen.add(id);
+        const prev=byId.get(id);
+        if(!prev){byId.set(id,{remote:source==='remote'?item:null,local:source==='local'?item:null});}
+        else prev[source]=item;
+      }
+    }
+    const positive=(n,fallback)=>Number.isFinite(Number(n))&&Number(n)>=0?Number(n):fallback;
+    const dates=(a,b)=>[a,b].filter(v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v));
+    const merged=new Map();
+    for(const [id,pair] of byId){
+      const a=pair.remote,b=pair.local;
+      if(!a||!b){merged.set(id,a||b);continue;}
+      if(JSON.stringify(a)===JSON.stringify(b)){merged.set(id,a);continue;}
+      if(errors){
+        const aMaster=a.dominada===true,bMaster=b.dominada===true;
+        const active=!(aMaster&&bMaster);
+        const first=dates(a.adicionado,b.adicionado);
+        const due=dates(a.proxima,b.proxima);
+        const aReason=String(a.motivo||'nao_classificado');
+        const bReason=String(b.motivo||'nao_classificado');
+        const reason=aReason==='nao_classificado'?bReason:aReason;
+        const stage=active?Math.min(positive(a.estagio,0),positive(b.estagio,0)):
+          Math.max(positive(a.estagio,0),positive(b.estagio,0));
+        merged.set(id,{
+          ...a,
+          id:Number(id),
+          area:a.area||b.area||'',
+          tema:a.tema||b.tema||'',
+          adicionado:first.length?first.sort()[0]:a.adicionado||b.adicionado||null,
+          erros:Math.max(1,positive(a.erros,1),positive(b.erros,1)),
+          motivo:reason,
+          dominada:!active,
+          estagio:Math.min(3,stage),
+          status:active?(stage>0?'em_andamento':'aberto'):'resolvido',
+          proxima:active?(due.length?due.sort()[0]:a.proxima||b.proxima||null):null
+        });
+      }else{
+        const aLast=dates(a.ultima,null)[0]||'',bLast=dates(b.ultima,null)[0]||'';
+        const aReps=positive(a.reps,0),bReps=positive(b.reps,0);
+        const latest=bLast>aLast?b:aLast>bLast?a:bReps>aReps?b:a;
+        const due=dates(a.proxima,b.proxima);
+        const content=(key)=>String(latest[key]||a[key]||b[key]||'');
+        merged.set(id,{
+          ...a,...b,id:Number(id),
+          area:content('area'),tema:content('tema'),
+          frente:content('frente').slice(0,220),
+          verso:content('verso').slice(0,700),
+          reps:Math.max(aReps,bReps),
+          intervalo:Math.max(1,Math.min(positive(a.intervalo,1),positive(b.intervalo,1))),
+          ultima:aLast>bLast?aLast:bLast||null,
+          proxima:due.length?due.sort()[0]:latest.proxima||null
+        });
+      }
+    }
+    const sorted=[...merged.entries()].sort((x,y)=>Number(x[0])-Number(y[0]));
+    const out=errors?sorted.map(x=>x[1]):Object.fromEntries(sorted);
+    const raw=JSON.stringify(out);
+    return raw.length<=MAX_KEY_CHARS?raw:null;
+  }
+
+  // Um merge não pode substituir dados em servidor ou dispositivo sem backup
+  // das DUAS versões. Mantém apenas a versão mais recente de cada par.
+  function backupMerges(ns,items){
+    if(!items.length)return;
+    const key='cti_sync_merge_backups_v1';
+    try{
+      let previous=[];
+      const prior=localStorage.getItem(key);
+      if(prior!==null){previous=JSON.parse(prior);if(!Array.isArray(previous))throw 0;}
+      const added=items.map(item=>({
+        namespace:ns,key:item.key,localRaw:item.backupRaw,
+        remoteRaw:item.remoteBackupRaw,savedAt:now()
+      }));
+      localStorage.setItem(key,JSON.stringify(previous.concat(added).slice(-8)));
+    }catch{
+      throw new Error('Não foi possível salvar o backup dos dois aparelhos. Nenhum dado foi substituído.');
+    }
+  }
+
   function plan(ns,local,remote,previous){
     const data=normalized(remote);
     const received=[];
@@ -168,12 +270,21 @@
       if((!initialized||base===undefined)&&changedLocal&&changedRemote&&!same
         &&bootstrapGeneratedKey(ns,key,localRaw,remoteRaw)){
         received.push({key,raw:remoteRaw,backupRaw:localRaw});
+      }else if((!initialized||base===undefined)&&changedLocal&&changedRemote&&!same
+        &&mergeLearningRecords(key,localRaw,remoteRaw)!==null){
+        const merged=mergeLearningRecords(key,localRaw,remoteRaw);
+        data.items[key]={raw:merged,modified:now()};
+        changedServer=true;
+        received.push({key,raw:merged,backupRaw:localRaw,
+                       remoteBackupRaw:remoteRaw,merged:true});
       }else if(changedLocal&&changedRemote&&!same){
-        const merged=mergeAttempts(key,localRaw,remoteRaw);
+        const merged=mergeAttempts(key,localRaw,remoteRaw) ??
+                     mergeLearningRecords(key,localRaw,remoteRaw);
         if(merged!==null){
           data.items[key]={raw:merged,modified:now()};
           changedServer=true;
-          received.push({key,raw:merged,backupRaw:localRaw});
+          received.push({key,raw:merged,backupRaw:localRaw,
+                         remoteBackupRaw:remoteRaw,merged:true});
         }else conflicts.push(key);
       }else if(changedLocal&&!same){
         data.items[key]={raw:localRaw,modified:now()};
@@ -194,7 +305,9 @@
     const p=plan(ns,local,remote,previous);
     // Mesmo com tela ativa, enviar mudanças locais independentes é seguro.
     // O recebimento continua bloqueado até a tela estar segura.
-    if(p.received.length&&canReceive())backupBootstrapValues(ns,p.received);
+    // Backup do merge deve preceder qualquer PUT, mesmo com a tela ocupada.
+    backupMerges(ns,p.received.filter(item=>item.merged));
+    if(p.received.length&&canReceive())backupBootstrapValues(ns,p.received.filter(item=>!item.merged));
     let version=Number(remote.version||0);
     if(p.changedServer){
       const body=JSON.stringify({namespace:ns,base_version:version,data:p.data});
