@@ -19,12 +19,12 @@
   }
   function renderTabs(){
     return '<div class="cti-int-tabs" role="tablist" aria-label="Análises disponíveis">'+[
-      ['estrategia','Minha estratégia'],['historico','Raio-X da prova'],['mudancas','Evolução histórica']
+      ['estrategia','Minha estratégia'],['historico','Raio-X da prova'],['tipos','Como a banca cobra'],['mudancas','Evolução histórica']
     ].map(([id,title])=>'<button type="button" role="tab" data-int-tab="'+id+'" aria-selected="'+(state.tab===id)+'" class="'+(state.tab===id?'on':'')+'">'+title+'</button>').join('')+'</div>';
   }
   function status(text){root.innerHTML='<div class="card"><p class="small muted">'+escape(text)+'</p></div>';}
   function note(){
-    return '<p class="small muted cti-int-note">A análise descreve exclusivamente o acervo disponível no CTI. Frequência passada não garante repetição futura. Classificação de dificuldade, tipo de cobrança e comparações entre provas não são inferidas sem dados validados.</p>';
+    return '<p class="small muted cti-int-note">A análise descreve exclusivamente o acervo disponível no CTI. Frequência passada não garante repetição futura. A distribuição de tipos de cobrança é uma triagem textual provisória, não uma classificação validada. Questões incertas permanecem sem classificação. Dificuldade e comparações entre provas exigem dados validados.</p>';
   }
   function render(){
     if(!root)return;
@@ -38,7 +38,7 @@
       ['Questões indexadas',num(d.total)],['Edições representadas',num(d.editions.length)],
       ['Temas no filtro',num(d.themes.length)],['Cobertura pessoal',num(d.completed)+' / '+num(d.totalScope)]
     ].map(([label,value])=>'<div class="cti-int-kpi"><span class="small muted">'+label+'</span><strong>'+escape(value)+'</strong></div>').join('')+'</div>';
-    root.innerHTML=tools+kpis+renderTabs()+(state.tab==='estrategia'?strategy(d):state.tab==='historico'?historical(d):changes(d))+note();
+    root.innerHTML=tools+kpis+renderTabs()+(state.tab==='estrategia'?strategy(d):state.tab==='historico'?historical(d):state.tab==='tipos'?classifications(d):changes(d))+note();
     $('#ctiIntExame').onchange=e=>{state.exam=e.target.value;state.area='';render();};
     $('#ctiIntArea').onchange=e=>{state.area=e.target.value;render();};
     root.querySelectorAll('[data-int-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.intTab;render();});
@@ -74,6 +74,19 @@
       '<div class="card"><h3>Recorrência dos temas</h3><p class="small muted">Contagem observada por edição, não probabilidade da próxima prova.</p>'+
       (d.themes.length?'<div class="cti-int-table-wrap"><table><thead><tr><th>Tema</th><th>Questões</th><th>Edições</th><th>Proporção</th></tr></thead><tbody>'+
         d.themes.slice().sort((a,b)=>b.n-a.n).slice(0,25).map(t=>'<tr><td><b>'+escape(t.theme)+'</b><div class="small muted">'+escape(t.area)+'</div></td><td>'+num(t.n)+'</td><td>'+t.editions+'/'+t.ofEditions+'</td><td>'+percent(t.pct)+'</td></tr>').join('')+'</tbody></table></div>':'<p>Sem temas no filtro.</p>')+'</div>';
+  }
+  function classifications(d){
+    const t=d.taxonomy||{types:[],classified:0,undetermined:d.totalScope,total:d.totalScope,coveragePct:0};
+    const sufficient=t.total>=30&&t.classified>=20&&t.coveragePct>=60;
+    return '<div class="card"><h3>Como a banca cobra — triagem textual</h3>'+
+      '<p class="small muted">Classificação automática baseada em expressões da pergunta. Não é avaliação clínica humana nem rótulo oficial da banca. Ausência de rótulo não significa ausência de conteúdo.</p>'+
+      '<div class="cti-int-kpis"><div class="cti-int-kpi"><span class="small muted">Classificadas provisoriamente</span><strong>'+num(t.classified)+'/'+num(t.total)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Sem classificação</span><strong>'+num(t.undetermined)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Cobertura da triagem</span><strong>'+percent(t.coveragePct)+'</strong></div>'+
+      '<div class="cti-int-kpi"><span class="small muted">Confiabilidade para orientar estudo</span><strong>Não validada</strong></div></div>'+
+      (!sufficient?'<p class="small muted"><b>Leitura restrita:</b> a cobertura textual é insuficiente para interpretar a distribuição como perfil de cobrança da prova.</p>':'<p class="small muted"><b>Leitura exploratória:</b> a cobertura é suficiente para mostrar a distribuição dos rótulos provisórios, mas exige revisão humana para orientar prioridades individuais.</p>')+
+      (t.types.length?t.types.map(x=>bar(x.label,x.pctClassified,num(x.n)+' rótulos · '+percent(x.pctTotal)+' do acervo analisado')).join(''):'<p class="small muted">Não há rótulos definidos neste filtro.</p>')+
+      '<p class="small muted">Os percentuais das barras são calculados sobre as questões classificadas, não sobre todas as questões. Nenhum desses rótulos altera o cálculo de prioridade, o CERA ou os simulados.</p></div>';
   }
   function changes(d){
     const enough=d.recentEditions.length>=2&&d.olderEditions.length>=2&&d.recentTotal>=20&&d.olderTotal>=20;
