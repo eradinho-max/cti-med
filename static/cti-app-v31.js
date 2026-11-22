@@ -753,7 +753,7 @@ async function buscarIA(id, qToken='', answerToken=''){
 }
 function iaIndispHtml(x, id){
   return `<div class="ia"><b class="row" style="gap:6px">${ic('ai')}IA Tutora</b>
-    <div class="imgwarn" style="margin-top:8px">${ic('alert')} O comentário da IA não está disponível agora. Pode ser o limite diário do plano grátis ou falta de conexão. O gabarito acima é o oficial.</div>
+    <div class="imgwarn" style="margin-top:8px">${ic('alert')} O comentário da IA não está disponível neste momento. O serviço pode estar temporariamente indisponível ou a resposta não pôde ser processada. O gabarito acima é o oficial.</div>
     <div class="row" style="justify-content:space-between;margin-top:8px"><span class="tiny muted">${esc(x.motivo || '')}</span><button class="btn sec sm" data-ia-retry="${id}">${ic('ai')}Tentar de novo</button></div></div>`;
 }
 async function carregarIA(q, r){
@@ -1985,7 +1985,7 @@ function renderDestaque(){
         return `<button class="alt ${c}" data-l="${l}" ${resp ? 'disabled' : ''}><span class="lt">${l}</span><span class="tx">${esc(q['alt_' + l])}</span></button>`; }).join('')}</div></div>
       <div class="resp-box ${resp ? '' : 'wait'}">${resp ? `<b class="t">${ic('bulb')}Resposta correta: ${resp.gab}</b>
         <div style="margin-bottom:6px;font-weight:700;color:${resp.acertou ? 'var(--ok)' : 'var(--bad)'}">${resp.acertou ? 'Você acertou!' : `Você marcou ${resp.sel}.`}</div>
-        <div>${esc(!DQ.exp ? 'Carregando a explicação da IA…' : DQ.exp.fonte === 'ia' ? DQ.exp.porque_correta : 'Comentário da IA indisponível agora (limite diário ou sem conexão).')}</div>
+        <div>${esc(!DQ.exp ? 'Carregando a explicação da IA…' : DQ.exp.fonte === 'ia' ? DQ.exp.porque_correta : 'Comentário da IA indisponível no momento. Tente novamente mais tarde.')}</div>
         <button class="btn sm" style="margin-top:10px" id="dqCompleta">Ver explicação completa ${ic('arrow')}</button>`
       : `<b class="row" style="gap:6px;color:var(--tx)">${ic('bulb')}Sua vez!</b><div style="margin-top:4px">Escolha uma alternativa para ver a resposta correta e a explicação da IA tutora. Uma nova questão aparece a cada dia.</div>`}</div></div>`;
   $$('#dqAlts .alt').forEach(b => b.onclick = () => responderDestaque(b.dataset.l));
