@@ -252,5 +252,60 @@ async function browser(initial={}, automatic=false){
  assert.equal(await invalidA.sync(),true);
  const invalidB=await browser({'medquest_historico':'[{"id":2}]'});
  assert.equal(await invalidB.sync(),false,'invalid event arrays stay conflicted');
+
+ // Regressão das duas chaves que bloquearam o celular (caderno de erros + flashcards).
+ for(const ns of Object.keys(store))store[ns]={version:0,data:{}};
+ const errorPc={id:580,area:'Clínica',tema:'Diabetes',adicionado:'2026-11-18',estagio:2,proxima:'2026-11-29',dominada:false,erros:2,motivo:'conteudo',status:'em_andamento'};
+ const errorPhone={...errorPc,estagio:0,proxima:'2026-11-23',erros:3,motivo:'nao_classificado',status:'aberto'};
+ const errorPhoneExtra={id:581,area:'Clínica',tema:'Asma',adicionado:'2026-11-20',estagio:0,proxima:'2026-11-23',dominada:false,erros:1,motivo:'interpretacao',status:'aberto'};
+ const flashPc={id:580,area:'Clínica',tema:'Diabetes',frente:'Conceito',verso:'Verso PC',proxima:'2026-12-02',intervalo:14,reps:4,ultima:'2026-11-21'};
+ const flashPhone={...flashPc,verso:'Verso celular',proxima:'2026-11-24',intervalo:3,reps:2,ultima:'2026-11-20'};
+ const flashPhoneExtra={id:581,area:'Clínica',tema:'Asma',frente:'Diferencial',verso:'Conduta',proxima:'2026-11-23',intervalo:1,reps:0,ultima:null};
+ const existingPc=await browser({
+   'medquest_erros':JSON.stringify([errorPc]),
+   'cti_flashcards_erros_v31':JSON.stringify({'580':flashPc})
+ });
+ assert.equal(await existingPc.sync(),true,'original PC stores errors and flashcards');
+ const existingPhone=await browser({
+   'medquest_erros':JSON.stringify([errorPhone,errorPhoneExtra]),
+   'cti_flashcards_erros_v31':JSON.stringify({'580':flashPhone,'581':flashPhoneExtra})
+ });
+ assert.equal(await existingPhone.sync(),true,'mobile reconciles both collections');
+ assert.equal(existingPhone.status().error,'');
+ const mergedErrors=JSON.parse(existingPhone.map.get('medquest_erros'));
+ assert.deepEqual(mergedErrors.map(x=>x.id),[580,581],'both error ids preserved');
+ assert.equal(mergedErrors[0].estagio,0,'no falsely advanced stage');
+ assert.equal(mergedErrors[0].erros,3,'keep highest observed error count');
+ assert.equal(mergedErrors[0].proxima,'2026-11-23','conservative earliest review');
+ assert.equal(mergedErrors[0].motivo,'conteudo','preserve named reason over unclassified');
+ const mergedCards=JSON.parse(existingPhone.map.get('cti_flashcards_erros_v31'));
+ assert.deepEqual(Object.keys(mergedCards),['580','581']);
+ assert.equal(mergedCards['580'].reps,4,'preserve higher review count');
+ assert.equal(mergedCards['580'].intervalo,3,'conservative review interval');
+ assert.equal(mergedCards['580'].proxima,'2026-11-24');
+ assert.equal(mergedCards['580'].verso,'Verso PC','prefer most recently reviewed version');
+ const backups=JSON.parse(existingPhone.map.get('cti_sync_merge_backups_v1'));
+ assert.equal(backups.length,2,'backups before both remote PUTs');
+ for(const backup of backups){
+   assert.ok(backup.localRaw && backup.remoteRaw,'both versions recoverable');
+   assert.ok(['medquest_erros','cti_flashcards_erros_v31'].includes(backup.key));
+ }
+ assert.equal(store.progress.data.items.medquest_erros.raw,existingPhone.map.get('medquest_erros'));
+ assert.equal(store.study.data.items.cti_flashcards_erros_v31.raw,existingPhone.map.get('cti_flashcards_erros_v31'));
+ assert.equal(await existingPc.sync(),true,'PC downloads reconciled data');
+ assert.deepEqual(JSON.parse(existingPc.map.get('medquest_erros')),mergedErrors);
+ assert.deepEqual(JSON.parse(existingPc.map.get('cti_flashcards_erros_v31')),mergedCards);
+ // Dados não confiáveis e remoções completas nunca são mesclados automaticamente.
+ for(const ns of Object.keys(store))store[ns]={version:0,data:{}};
+ const emptyPc=await browser({'medquest_erros':'[]','cti_flashcards_erros_v31':'{}'});
+ assert.equal(await emptyPc.sync(),true);
+ const nonemptyPhone=await browser({'medquest_erros':JSON.stringify([errorPc]),
+                                   'cti_flashcards_erros_v31':JSON.stringify({'580':flashPc})});
+ assert.equal(await nonemptyPhone.sync(),false,'empty collections must not resurrect deleted items');
+ assert.equal(store.progress.data.items.medquest_erros.raw,'[]');
+ assert.equal(store.study.data.items.cti_flashcards_erros_v31.raw,'{}');
+ assert.equal(nonemptyPhone.map.get('medquest_erros'),JSON.stringify([errorPc]));
+ assert.equal(nonemptyPhone.map.get('cti_flashcards_erros_v31'),JSON.stringify({'580':flashPc}));
+
  console.log('PASS manual/automatic cross-device, append-only history, conflict isolation, safe active-view sync');
 })().catch(err=>{console.error(err);process.exitCode=1});
