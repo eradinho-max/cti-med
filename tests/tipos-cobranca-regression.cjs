@@ -27,10 +27,34 @@ assert.equal(co.taxonomy.undetermined,1);
 assert.equal(co.taxonomy.types.length,0);
 const source=fs.readFileSync('static/inteligencia.js','utf8');
 assert.ok(source.includes("['tipos','Como a banca cobra']"));
-assert.ok(source.includes('Não validada'));
-assert.ok(source.includes('Distribuição ocultada para evitar interpretação indevida'));
+assert.ok(source.includes('Natureza dos rótulos'));
+assert.ok(source.includes('Não há itens classificados neste filtro.'));
 assert.ok(source.includes('sufficient&&t.types.length'));
-assert.ok(source.includes('Nenhum desses rótulos altera'));
+assert.ok(source.includes('os rótulos não alteram gabaritos nem notas'));
+const cmp=d.comparisons.find(x=>x.exam==='CONAREM');
+assert.ok(cmp,'comparação com CONAREM deve existir');
+assert.ok(cmp.score>=0&&cmp.score<=100);
+assert.ok(cmp.themeOverlap>=0&&cmp.themeOverlap<=100);
+assert.ok(source.includes("['comparar','Comparar provas']"));
+assert.ok(source.includes("function comparisons(d)"));
+const hist=[];
+for(let n=1;n<=5;n++)hist.push({id:n,acertou:n===1,ts:n});
+const extended=items.slice(0,4);
+extended.push(
+ {id:7,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'},
+ {id:8,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'},
+ {id:9,exame:'Revalida INEP',edicao:'2026',area:'Clínica',tema:'Diabetes',valida:true,dup:null,cobranca:'Tratamento e conduta'}
+);
+const extendedHist=[{id:1,acertou:false,ts:1},{id:2,acertou:true,ts:2},{id:7,acertou:false,ts:3},{id:8,acertou:false,ts:4},{id:9,acertou:false,ts:5}];
+const e=core.analyze(extended,extendedHist,'Revalida INEP','Clínica');
+const tr=e.themes.find(t=>t.theme==='Diabetes');
+assert.ok(tr.weakCompetence==='Tratamento e conduta');
+assert.ok(tr.next.includes('tratamento e conduta'));
+assert.equal(tr.difficulty,'Alta dificuldade individual');
+const treatment=e.taxonomy.competencies.find(x=>x.label==='Tratamento e conduta');
+assert.equal(treatment.done,4);
+assert.equal(treatment.correct,0);
+assert.equal(treatment.difficulty,'Maior dificuldade');
 const indexMain=fs.readFileSync('main.py','utf8');
 assert.ok(indexMain.includes('\"cobranca\": TIPOS_COBRANCA.get'));
 console.log('PASS taxonomy distribution, unknown denominator, area/exam isolation, visible limitations');
