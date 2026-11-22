@@ -42,6 +42,7 @@ jobs:
           node tests/inteligencia-provas-regression.cjs
           node --max-old-space-size=2048 tests/inteligencia-acervo-real.cjs
           node tests/inteligencia-interacoes.cjs
+          node tests/inteligencia-menu-regression.cjs
           node tests/tipos-cobranca-regression.cjs
           node --check static/mb32.js
           node --check static/mb33.js
