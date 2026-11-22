@@ -319,7 +319,7 @@ class Provedor:
     def disponivel(self):
         return bool(self.key) and time.time() >= self.pausado_ate
 
-    def chamar(self, msgs, max_tokens=6000, timeout=None):
+    def chamar(self, msgs, max_tokens=6000, timeout=None, allow_text=False):
         body = {
             "model": self.modelo,
             "temperature": self.temperature,
@@ -343,7 +343,17 @@ class Provedor:
         try:
             with urllib.request.urlopen(req, timeout=(self.timeout if timeout is None else timeout)) as r:
                 payload = json.loads(r.read())
-                return _parse(payload["choices"][0]["message"]["content"])
+                raw_content = payload["choices"][0]["message"]["content"]
+                try:
+                    return _parse(raw_content)
+                except (json.JSONDecodeError, ValueError):
+                    # Kotu permite resposta textual íntegra mesmo se o modelo
+                    # ignorar o envelope JSON. Jamais usar isso em gabaritos.
+                    if allow_text and isinstance(raw_content, str):
+                        clean = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.S).strip()
+                        if len(clean) >= 12 and not clean.lstrip().startswith(("{", "[", "```")):
+                            return {"resposta": clean}
+                    raise
         except urllib.error.HTTPError as ex:
             # Alguns endpoints não aceitam response_format; uma única repetição sem esse campo.
             if ex.code == 400 and self.json_mode:
@@ -394,6 +404,18 @@ if _nkey:
         tipo="nvidia", temperature=1.0, top_p=0.95, timeout=40,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}}
     ))
+    # Segundo modelo com a mesma chave NVIDIA: aumenta a resiliência diante
+    # de respostas incompletas/erros de um modelo. Não é outro provedor;
+    # cotas e indisponibilidades da NVIDIA continuam compartilhadas.
+    _nvidia_primary = _env("CTI_NVIDIA_MODEL", padrao="nvidia/nemotron-3.5-lightning-30b-a3b")
+    _nvidia_backup = _env("CTI_NVIDIA_FALLBACK_MODEL", padrao="meta/llama-3.3-70b-instruct").strip()
+    if _nvidia_backup and _nvidia_backup != _nvidia_primary:
+        PROVEDORES.append(Provedor(
+            "NVIDIA/Reserva",
+            _env("CTI_NVIDIA_BASE_URL", padrao="https://integrate.api.nvidia.com/v1"),
+            _nkey, _nvidia_backup,
+            tipo="nvidia", temperature=0.2, timeout=38
+        ))
 
 _lkey = _env("CTI_LLM_API_KEY", "MEDQUEST_LLM_API_KEY", "OPENAI_API_KEY")
 if _lkey:
@@ -493,7 +515,20 @@ def gerar(q: dict):
 
         for tentativa in range(2):
             try:
-                resp = p.chamar(msgs)
+                # Uma repetição idêntica tende a repetir JSON incompleto.
+                # Na segunda tentativa, reforça os campos e aumenta o limite.
+                pedido = msgs if tentativa == 0 else msgs + [{
+                    "role": "user",
+                    "content": (
+                        "A resposta anterior ficou incompleta. Gere novamente UM JSON COMPLETO, "
+                        "sem comentários fora do JSON. Inclua TODAS as alternativas, "
+                        "dica, resumo, porque_correta detalhado, bizu, dois pontos_atencao, "
+                        "dois itens de foco e farmacologia_conduta com aplicavel booleano, "
+                        "classe_farmacologica e, se aplicável, resumo_essencial e primeira_escolha. "
+                        "Não invente doses ou referências. O gabarito oficial não pode ser alterado."
+                    )
+                }]
+                resp = p.chamar(pedido, max_tokens=6500 if tentativa else 6000)
                 if isinstance(resp, dict):
                     itens = resp.get("itens", [resp])
                 elif isinstance(resp, list):
@@ -1342,7 +1377,7 @@ def _cadeia(msgs, aceitar, contexto="ia", max_tokens=4096):
             continue
         for tentativa in range(2):
             try:
-                resp = p.chamar(msgs, max_tokens=max_tokens)
+                resp = p.chamar(msgs, max_tokens=max_tokens, allow_text=contexto=="kotu")
                 item = aceitar(resp)
                 if item:
                     p.ultimo_erro = ""
