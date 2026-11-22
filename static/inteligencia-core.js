@@ -97,10 +97,21 @@
       const deficit=n>=5?1-accuracy/100:0.5;
       const score=Math.round(100*(0.40*frequency+0.35*deficit+0.25*(1-coverage)));
       const difficulty=n>=5?(accuracy<50?'Alta dificuldade individual':accuracy<70?'Dificuldade moderada':'Bom domínio observado'):'Ainda não avaliada';
-      return {area:t.area,theme:t.theme,n:t.n,pct:rate(t.n,base.length),difficulty,
+      const perCompetence=new Map();
+      for(const q of base){
+        if(txt(q.area||q.especialidade)!==t.area||txt(q.tema)!==t.theme)continue;
+        const label=txt(q.cobranca),answer=latestById.get(String(q.id));
+        if(!answer||!label||label==='Não classificada')continue;
+        const current=perCompetence.get(label)||{label,done:0,correct:0};
+        current.done++;if(answer.correct)current.correct++;perCompetence.set(label,current);
+      }
+      const weakCompetence=[...perCompetence.values()].filter(x=>x.done>=3&&x.correct/x.done<.7)
+        .sort((a,b)=>a.correct/a.done-b.correct/b.done||b.done-a.done)[0];
+      const recommendation=weakCompetence?'Reforçar '+weakCompetence.label.toLowerCase()+' neste tema':n<5?'Fazer diagnóstico do tema':accuracy<70?'Revisar erros e treinar decisões':'Consolidar com questões variadas';
+      return {area:t.area,theme:t.theme,n:t.n,pct:rate(t.n,base.length),difficulty,weakCompetence:weakCompetence?.label||null,
         editions:t.editions.size,ofEditions:editions.length,uniqueDone:n,correct:t.correct,
         attempts:t.attempts,accuracy,score,confidence:n>=15?'mais ampla':n>=5?'intermediária':'limitada',
-        next:n<5?'Fazer diagnóstico do tema':accuracy<70?'Reforçar decisões e revisar erros':'Consolidar com questões variadas',
+        next:recommendation,
         editionCounts:Object.fromEntries(t.editionCounts)};
     }).sort((a,b)=>b.score-a.score||b.n-a.n||a.theme.localeCompare(b.theme,'pt-BR'));
     const recent=editions.slice(-3),older=editions.slice(0,-3);
