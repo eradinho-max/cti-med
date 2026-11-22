@@ -358,7 +358,7 @@ class Provedor:
             # Alguns endpoints não aceitam response_format; uma única repetição sem esse campo.
             if ex.code == 400 and self.json_mode:
                 self.json_mode = False
-                return self.chamar(msgs, max_tokens, timeout=timeout)
+                return self.chamar(msgs, max_tokens, timeout=timeout, allow_text=allow_text)
             raise
 
 
@@ -508,12 +508,15 @@ def gerar(q: dict):
     ]
     motivos = []
 
+    tem_alternativa = sum(1 for p in PROVEDORES if p.disponivel()) > 1
     for p in PROVEDORES:
         if not p.disponivel():
             motivos.append(f"{p.nome}: pausado ({p.ultimo_erro})")
             continue
 
-        for tentativa in range(2):
+        # Com alternativa disponível, trocamos imediatamente de modelo em
+        # vez de repetir a mesma resposta inválida (evita latência excessiva).
+        for tentativa in range(1 if tem_alternativa else 2):
             try:
                 # Uma repetição idêntica tende a repetir JSON incompleto.
                 # Na segunda tentativa, reforça os campos e aumenta o limite.
@@ -528,7 +531,8 @@ def gerar(q: dict):
                         "Não invente doses ou referências. O gabarito oficial não pode ser alterado."
                     )
                 }]
-                resp = p.chamar(pedido, max_tokens=6500 if tentativa else 6000)
+                resp = p.chamar(pedido, max_tokens=6500 if tentativa else 6000,
+                                timeout=min(p.timeout, 29 if tem_alternativa else 38))
                 if isinstance(resp, dict):
                     itens = resp.get("itens", [resp])
                 elif isinstance(resp, list):
@@ -1371,13 +1375,15 @@ def status() -> dict:
 def _cadeia(msgs, aceitar, contexto="ia", max_tokens=4096):
     """Pipeline genérico do Kotu sobre os provedores já usados pelo CTi."""
     motivos = []
+    tem_alternativa = sum(1 for p in PROVEDORES if p.disponivel()) > 1
     for p in PROVEDORES:
         if not p.disponivel():
             motivos.append(f"{p.nome}: pausado")
             continue
-        for tentativa in range(2):
+        for tentativa in range(1 if tem_alternativa else 2):
             try:
-                resp = p.chamar(msgs, max_tokens=max_tokens, allow_text=contexto=="kotu")
+                resp = p.chamar(msgs, max_tokens=max_tokens, timeout=min(p.timeout, 24 if tem_alternativa else 38),
+                               allow_text=contexto=="kotu")
                 item = aceitar(resp)
                 if item:
                     p.ultimo_erro = ""
