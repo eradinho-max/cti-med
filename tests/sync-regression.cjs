@@ -211,39 +211,39 @@ async function browser(initial={}, automatic=false){
  const eventA={id:580,ts:1001,data:'2026-11-22',area:'Clínica',tema:'Diabetes',exame:'Revalida',acertou:true,origem:'treino'};
  const eventB={id:581,ts:1002,data:'2026-11-22',area:'Clínica',tema:'Hipertensão',exame:'Revalida',acertou:false,origem:'treino'};
  const eventC={id:582,ts:1003,data:'2026-11-22',area:'Clínica',tema:'Asma',exame:'Revalida',acertou:true,origem:'treino'};
- const a=await browser({'medquest_historico':JSON.stringify([eventA]),
+ const mergePc=await browser({'medquest_historico':JSON.stringify([eventA]),
                          'cti_study_notes_v32':JSON.stringify({note:'PC'})});
- assert.equal(await a.sync(),true);
- const b=await browser({'medquest_historico':JSON.stringify([eventB]),
+ assert.equal(await mergePc.sync(),true);
+ const mergePhone=await browser({'medquest_historico':JSON.stringify([eventB]),
                          'cti_study_notes_v32':JSON.stringify({note:'PHONE'})});
- assert.equal(await b.sync(),false,'unrelated divergent notes should remain in conflict');
+ assert.equal(await mergePhone.sync(),false,'unrelated divergent notes should remain in conflict');
  assert.deepEqual(JSON.parse(store.progress.data.items.medquest_historico.raw).map(e=>e.id),[580,581]);
- assert.deepEqual(JSON.parse(b.map.get('medquest_historico')).map(e=>e.id),[580,581]);
- assert.equal(b.map.get('cti_study_notes_v32'),JSON.stringify({note:'PHONE'}));
+ assert.deepEqual(JSON.parse(mergePhone.map.get('medquest_historico')).map(e=>e.id),[580,581]);
+ assert.equal(mergePhone.map.get('cti_study_notes_v32'),JSON.stringify({note:'PHONE'}));
  assert.equal(store.study.data.items.cti_study_notes_v32.raw,JSON.stringify({note:'PC'}));
- assert.ok(b.status().error.includes('study'),'show pending conflict instead of success');
- assert.equal(await a.sync(),true);
- assert.deepEqual(JSON.parse(a.map.get('medquest_historico')).map(e=>e.id),[580,581]);
- b.setSafe(false);
- b.map.set('medquest_historico',JSON.stringify([eventA,eventB,eventC]));
- assert.equal(await b.sync(),false,'unresolved notes must not hide history upload');
+ assert.ok(mergePhone.status().error.includes('study'),'show pending conflict instead of success');
+ assert.equal(await mergePc.sync(),true);
+ assert.deepEqual(JSON.parse(mergePc.map.get('medquest_historico')).map(e=>e.id),[580,581]);
+ mergePhone.setSafe(false);
+ mergePhone.map.set('medquest_historico',JSON.stringify([eventA,eventB,eventC]));
+ assert.equal(await mergePhone.sync(),false,'unresolved notes must not hide history upload');
  assert.deepEqual(JSON.parse(store.progress.data.items.medquest_historico.raw).map(e=>e.id),[580,581,582]);
- assert.equal(await a.sync(),true);
- assert.deepEqual(JSON.parse(a.map.get('medquest_historico')).map(e=>e.id),[580,581,582]);
+ assert.equal(await mergePc.sync(),true);
+ assert.deepEqual(JSON.parse(mergePc.map.get('medquest_historico')).map(e=>e.id),[580,581,582]);
  // A mesma categoria pode ter conflito de missão, sem bloquear o histórico.
  for(const ns of Object.keys(store))store[ns]={version:0,data:{}};
  const missionA=JSON.stringify({dias:{day:{respostas:{1:'A'}}}});
  const missionB=JSON.stringify({dias:{day:{respostas:{1:'B'}}}});
- const c=await browser({'medquest_historico':JSON.stringify([eventA]),
+ const missionPc=await browser({'medquest_historico':JSON.stringify([eventA]),
                        'medquest_missao':missionA});
- assert.equal(await c.sync(),true);
- const d=await browser({'medquest_historico':JSON.stringify([eventB]),
+ assert.equal(await missionPc.sync(),true);
+ const missionPhone=await browser({'medquest_historico':JSON.stringify([eventB]),
                        'medquest_missao':missionB,
                        'cti_study_notes_v32':'{"note":"phone-note"}'});
- assert.equal(await d.sync(),false,'mission remains protected instead of overwriting');
+ assert.equal(await missionPhone.sync(),false,'mission remains protected instead of overwriting');
  assert.deepEqual(JSON.parse(store.progress.data.items.medquest_historico.raw).map(e=>e.id),[580,581]);
  assert.equal(store.progress.data.items.medquest_missao.raw,missionA);
- assert.equal(d.map.get('medquest_missao'),missionB);
+ assert.equal(missionPhone.map.get('medquest_missao'),missionB);
  assert.equal(store.study.data.items.cti_study_notes_v32.raw,'{"note":"phone-note"}',
               'independent study data must synchronize despite progress conflict');
  // Não mesclar objetos truncados/sem timestamp nem tratar exclusão deliberada como append.
