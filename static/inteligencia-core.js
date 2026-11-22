@@ -41,7 +41,7 @@
     const competenceCounts=new Map();
     for(const q of base){
       const label=txt(q.cobranca);
-      if(!label||label==='Não classificada')continue;
+      if(!label||label==='Não classificada'||(selectedArea&&txt(q.area||q.especialidade)!==selectedArea))continue;
       const old=competenceCounts.get(label)||{label,total:0,done:0,correct:0};
       old.total++;
       const answer=latestById.get(String(q.id));
@@ -85,7 +85,6 @@
     const competencies=[...competenceCounts.values()].map(c=>({...c,accuracy:c.done?rate(c.correct,c.done):null,
       difficulty:c.done>=5?(c.correct/c.done<0.5?'Maior dificuldade':c.correct/c.done<0.7?'Reforçar':'Consolidar'):'Explorar',
       evidence:c.done>=5?'histórico individual':'poucas respostas'}))
-      .filter(c=>!selectedArea||base.some(q=>txt(q.area||q.especialidade)===selectedArea&&txt(q.cobranca)===c.label))
       .sort((a,b)=>(a.done>=5&&a.accuracy<70?0:1)-(b.done>=5&&b.accuracy<70?0:1)||b.total-a.total);
     const subjects=[...byTheme.values()].filter(t=>!selectedArea||t.area===selectedArea);
     const maxN=Math.max(1,...subjects.map(t=>t.n));
