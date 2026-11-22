@@ -29,6 +29,8 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Python syntax
         run: python -m py_compile exam_taxonomy.py main.py kotu_api.py clinical_ai.py ia_provedores.py security_auth.py user_store.py sync_store.py segunda_fase.py atualizacoes.py
+      - name: IA failover regression (offline)
+        run: python -m unittest discover -s tests -p test_ai_failover.py
       - name: Taxonomia de questões
         run: python -m unittest discover -s tests -p test_exam_taxonomy.py
       - name: Taxonomia — auditoria do acervo real
