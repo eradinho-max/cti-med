@@ -1,6 +1,6 @@
 """Classificação textual conservadora do tipo de cobrança das questões.
 
-Não é um rótulo oficial da banca, nem classificação validada por especialistas.
+Não é um rótulo oficial da banca. Trata-se de uma classificação automática por regras.
 Termos clinicamente citados no caso não garantem que correspondam à competência
 avaliada. Saídas ambíguas permanecem SEM_CLASSIFICACAO.
 """
