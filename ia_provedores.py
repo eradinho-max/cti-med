@@ -417,6 +417,17 @@ if _nkey:
             tipo="nvidia", temperature=0.2, timeout=38
         ))
 
+_groq_key = _env("CTI_GROQ_API_KEY", "GROQ_API_KEY")
+if _groq_key:
+    # Segundo provedor independente. Nunca cobra sem chave disponibilizada pelo operador.
+    PROVEDORES.append(Provedor(
+        "Groq/Reserva",
+        "https://api.groq.com/openai/v1",
+        _groq_key,
+        _env("CTI_GROQ_MODEL", padrao="openai/gpt-oss-120b"),
+        tipo="groq", temperature=0.2, timeout=30
+    ))
+
 _lkey = _env("CTI_LLM_API_KEY", "MEDQUEST_LLM_API_KEY", "OPENAI_API_KEY")
 if _lkey:
     PROVEDORES.append(Provedor(
