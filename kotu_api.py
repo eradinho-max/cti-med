@@ -190,7 +190,7 @@ def build_kotu_router(by_id: dict, est_by_id: dict, exames_ocultos: set, conteud
         return {"ok":True,"material":material,"meta":{"model":model,"latencyMs":int((time.time()-t0)*1000),"schemaVersion":1,"source":{"origin":origin,"questionId":c.questionId,"stationId":c.stationId}}}
 
     @router.post("/api/cotu/estudo", include_in_schema=False)
-    def cotu_study_alias(req: KotuStudyRequest):
-        return kotu_study(req)
+    def cotu_study_alias(req: KotuStudyRequest, request: Request):
+        return kotu_study(req, request)
 
     return router
