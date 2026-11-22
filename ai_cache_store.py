@@ -177,7 +177,9 @@ def get_or_generate(*, key: str, digest: str, kind: str, generator: Callable[[],
     wait briefly and return None, not another costly generation.
     """
     cache = store if store is not None else STORE
-    scope = "private" if owner else "shared"
+    scope = "private" if kind == "kotu_study" or owner else "shared"
+    if kind == "kotu_study" and not owner:
+        return generator()
     if not cache.ready:
         return generator()
     hit = cache.get(key, scope, owner)
